@@ -102,7 +102,6 @@ if pipeline['control']:
 
    
     # initialize the MPC controller and load params f
-    #controller = mpc.MPC(x)
     controller = mpc.MPC(x - xr)  # controller uses reference frame with xr at center 
 
     if controller.use_learned_model:
@@ -113,7 +112,6 @@ if pipeline['control']:
         print('using first-principles model')
 
     # check feasibility of the current state and input
-    #controller.confirm_feasibility(x, controller.u0)
     controller.confirm_feasibility(x - xr, controller.u0) # controller uses reference frame with xr at center 
 
     # initialize the control input
@@ -124,7 +122,6 @@ if pipeline['control']:
     for k in range(int(controller.Tf / controller.Ts)):
 
         # run controller
-        #controller.solve(x, u)
         controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
 
         # store predicted sequence 

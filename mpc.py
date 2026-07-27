@@ -240,11 +240,11 @@ class MPC():
         u0  = np.array(cfg['u0'], dtype=float)
         h   = cfg['h']
         m   = cfg['m']
-        constraints     = cfg['constraints']
-        disturbance     = cfg['disturbance']
-        use_learned_model = cfg['use_learned_model']
-        enforce_terminal = cfg['enforce_terminal']
-        horizon_feasibility_search = cfg['horizon_feasibility_search']
+        constraints                 = cfg['constraints']
+        disturbance                 = cfg['disturbance']
+        use_learned_model           = cfg['use_learned_model']
+        enforce_terminal            = cfg['enforce_terminal']
+        horizon_feasibility_search  = cfg['horizon_feasibility_search']
         
         # assign
         self.A = np.array(A, ndmin=2)           # state matrix  
@@ -517,7 +517,6 @@ class MPC():
 
         # define the optimization problem
         self.prob = cp.Problem(cp.Minimize(self.opt_cost), self.opt_constraints)
-
 
     def solve(self, x0, u0, update_disturbance_estimate = True):
 

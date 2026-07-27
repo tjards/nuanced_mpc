@@ -2,7 +2,7 @@ data/*
 visualization/animations/*  
 visualization/plots/*
 logs/*
-
+docs/cala/*
 
 # Python cache files
 __pycache__/
