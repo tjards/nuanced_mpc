@@ -15,7 +15,7 @@ from data_manager import Dataset
 # Pipeline Setup
 # ------------------------------------------------------------------ 
 pipeline = {
-    'model':    True,
+    'model':    False,
     'control':  True,
     'visuals':  True
 }

@@ -245,7 +245,7 @@ class MPC():
         use_learned_model = cfg['use_learned_model']
         enforce_terminal = cfg['enforce_terminal']
         horizon_feasibility_search = cfg['horizon_feasibility_search']
-
+        
         # assign
         self.A = np.array(A, ndmin=2)           # state matrix  
         self.B = np.array(B, ndmin=2)           # input matrix
@@ -282,6 +282,20 @@ class MPC():
         # terminal constraints
         self.enforce_terminal = enforce_terminal
         self.horizon_feasibility_search = horizon_feasibility_search
+
+        # receding horizon config
+        self.replan         = True
+        self.replan_count   = -1                  
+        self.plan_index     = 0
+        self.replan_mode    = cfg['replan_mode']
+        if self.replan_mode == 'receding_horizon':
+            self.replan_trigger = 0
+        elif self.replan_mode == 'control_horizon':
+            self.replan_trigger = self.m 
+        elif self.replan_mode == 'prediction_horizon':
+            self.replan_trigger = self.h
+        else:
+            raise ValueError(f'invalid replan mode: {self.replan_mode}.')
 
         # we can do disturbance rejection
         if self.disturbance:
@@ -435,10 +449,6 @@ class MPC():
     def _build_augmented_constraints(self):
        
         if self.constraints["type"] == "box":
-            #self.x_min_aug = np.tile(np.asarray(self.x_min).reshape(-1), self.h)
-            #self.x_max_aug = np.tile(np.asarray(self.x_max).reshape(-1), self.h)
-            #self.u_min_aug = np.tile(np.asarray(self.u_min).reshape(-1), self.h)
-            #self.u_max_aug = np.tile(np.asarray(self.u_max).reshape(-1), self.h)
             self.x_min_aug = np.tile(self.x_min, (self.h, 1))
             self.x_max_aug = np.tile(self.x_max, (self.h, 1))
             self.u_min_aug = np.tile(self.u_min, (self.h, 1))
@@ -446,10 +456,8 @@ class MPC():
 
         elif self.constraints["type"] == "lmi":
             self.Mx_aug = np.kron(np.eye(self.h), self.Mx)
-            #self.bx_aug = np.tile(np.asarray(self.bx).reshape(-1), self.h)
             self.bx_aug = np.tile(np.asarray(self.bx).reshape(-1, 1),(self.h, 1),)
             self.Mu_aug = np.kron(np.eye(self.h), self.Mu)
-            #self.bu_aug = np.tile(np.asarray(self.bu).reshape(-1), self.h)
             self.bu_aug = np.tile(np.asarray(self.bu).reshape(-1, 1),(self.h, 1),)
 
         else:
@@ -510,41 +518,64 @@ class MPC():
         # define the optimization problem
         self.prob = cp.Problem(cp.Minimize(self.opt_cost), self.opt_constraints)
 
+
     def solve(self, x0, u0, update_disturbance_estimate = True):
 
+        # 1. Update the parameters
         if self.new_model_parameters:
             self.update_internal_parameters()
             self.new_model_parameters = False  
+            #~
+            self.replan_count = -1 
 
-        self.x0 = np.array(x0).reshape(-1, 1)
+        # 2. Initialize variables 
+        
+        # inputs
         self.u0 = np.array(u0).reshape(-1, 1)
-
-        # update disturbance estimate from prediction error
+        
+        # states
+        self.x0 = np.array(x0).reshape(-1, 1)
+        self.x0_param.value = self.x0
+        
+        # disturbances
         if self.disturbance and self.x_prev is not None and update_disturbance_estimate:
             prediction_error = self.x0 - self.A @ self.x_prev - self.B @ self.u_prev
             self.d_hat, _, _, _ = np.linalg.lstsq(self.B, prediction_error, rcond=None)
-
-        # update initial state 
-        self.x0_param.value = self.x0
-
-        # update disturbance estimate
         if self.disturbance:
             self.d_hat_param.value = self.d_hat
 
-        # solve the optimization problem
-        self.prob.solve()
+        # 3. Solve the optimization problem (if triggered)
+        self.replan = (self.replan_count < 0 or self.replan_count >= self.replan_trigger)
 
-        if self.prob.status not in ("optimal", "optimal_inaccurate"):
-            raise RuntimeError(f"MPC solver failed: {self.prob.status}")
+        if self.replan:
+        
+            self.prob.solve()
+            if self.prob.status not in ("optimal", "optimal_inaccurate"):
+                raise RuntimeError(f"MPC solver failed: {self.prob.status}")
+        
+            # results
+            self.result_control_sequence    = self.u_full.value.copy()
+            self.result_state_sequence      = self.s.value.copy()
+            self.result_control_next        = self.result_control_sequence[:self.nu].copy()
 
-        # results
-        self.result_control_next        = self.u_full.value[:self.nu]
-        self.result_control_sequence    = self.u_full.value
-        self.result_state_sequence      = self.s.value
+            # reset the planner count
+            self.replan_count = 1
+            self.plan_index = 0
 
-        # store state and commanded input for next disturbance update
+        else:
+
+            _input_start = self.replan_count * self.nu
+            _input_end = _input_start + self.nu
+        
+            self.result_control_next = self.result_control_sequence[_input_start:_input_end].copy()
+            self.plan_index = self.replan_count
+            self.replan_count += 1
+
+        # 4. Store state and commanded input for next disturbance update
         if self.disturbance and update_disturbance_estimate:
             self.x_prev = self.x0.copy()
             self.u_prev = self.result_control_next.copy()
+
+  
 
 
