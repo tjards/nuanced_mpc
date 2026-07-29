@@ -1,0 +1,17 @@
+{
+    "feature_map":{
+        "x_lims": [-5, 5],
+        "y_lims": [-5, 5],
+        "x_n": 5,
+        "y_n": 5,
+        "sigma_factor": 1.25,
+        "feature_centers": null,
+        "include_bias": true,
+        "include_time": true,
+        "omega": 0.2,
+        "normalize": true 
+    },
+    "learning_agent":{
+        "param": null
+    }
+}
