@@ -240,11 +240,13 @@ used by MPC: d_eff = d_hat + d_cala
 
 class CALA_NLD():
 
-    def __init__(self, n_features, n_inputs):
+    def __init__(self, feature_map, n_inputs):
 
         # enforce formats for passed in variables
-        self.n_features = int(n_features)
-        self.n_inputs =  int(n_inputs)
+        self.n_features     =  len(feature_map.names)
+        self.n_inputs       =  int(n_inputs)
+        # note: should we store the whole feature map for later?
+
 
         # bring in configs 
         with open('configs/config_cala.json') as f:
@@ -268,20 +270,14 @@ class CALA_NLD():
         self.sigma      = np.full((self.n_features, self.n_inputs), self.sigma_init, dtype=float)      # stds
         self.action     = np.zeros((self.n_features, self.n_inputs))
 
-        # d_cala (n_actions,) = 
+        # d_cala (n_inputs,) = 
         self.d_cala     = np.zeros((self.n_inputs))
 
-        # phi (n_features,) @ d_local (n_features, n_actions) 
-        self.phi        = np.zeros((self.n_features))
-        self.d_local    = np.zeros((self.n_features, self.n_inputs))
+        # phi (n_features,) @ d_local (n_features, n_inputs) c        
+        self._d_local   = np.zeros((self.n_features, self.n_inputs)) # use _ because it's kind of just an internal param
 
-
-
-
-
-
-
-
+        # note: phi comes from feature map - don't duplicate
+        #self.phi        = np.zeros((self.n_features)) 
 
     # sample an action from the distributions (exploit or explore)
     def sample(self, explore = True):
@@ -289,12 +285,46 @@ class CALA_NLD():
         # default is to explore the distribution
         if explore:
             action = self.rng.normal(self.mu, self.sigma)
-        # else, explore the mean
+        # else, exploit the mean
         else:
             action = self.mu.copy()
 
+        # ensure between 0 and 1
+        self.action = np.clip(action, 0.0, 1.0)
+
         # note: action size should be (self.n_features, self.n_inputs)
-        return np.clip(action, 0.0, 1.0)
+        return self.action
+
+    # map sample to disturbance correction 
+    def map_sample_to_disturbance(self, phi):
+
+        # reshape to allow either list or array
+        phi = np.asarray(phi, dtype=float).reshape(-1)
+
+        # translate acton to local disturbance
+        self._d_local = 2.0 * self.d_max * (self.action - 0.5)
+
+        # blend local features into one input signal
+        self.d_cala = phi @ self._d_local
+
+        # note: this should be the size of the inputs now
+        return self.d_cala
+
+    # combine two above
+    def sample_map(self, phi, explore = True):
+
+        # reshape to allow either list or array
+        phi = np.asarray(phi, dtype=float).reshape(-1)
+
+        #test
+        if phi.shape[0] != self.n_features:
+            raise ValueError(f"dimensions of phi: {phi.shape} do not match feature length {self.n_features}") 
+
+        action = self.sample(explore = explore)
+        d_cala = self.map_sample_to_disturbance(phi = phi)
+
+        return action, d_cala
+
 
 
 #-----------
@@ -303,8 +333,13 @@ class CALA_NLD():
 
 import matplotlib.pyplot as plt
 
-#test = RTFeatureMap()
+test_map = RTFeatureMap()
 #test.plot_feature(feature_index = 0, t = 0.0)
 #test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
+test_phi = test_map.build_features([0.0], 0.0)
+print(f"phi is type: {type(test_phi)} and shape: {test_phi.shape}")
 
-test2 = CALA_NLD(7,2)
+test_cala = CALA_NLD(test_map, 2)
+action, d_cala = test_cala.sample_map(test_phi)
+
+print(f"selected disturbance:  {d_cala}")
