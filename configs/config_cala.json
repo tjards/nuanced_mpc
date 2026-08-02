@@ -11,7 +11,22 @@
         "omega": 0.2,
         "normalize": true 
     },
-    "learning_agent":{
-        "param": null
+    "cala_mpc_nld": {
+        "d_max": 0.5,
+        "mu_init": 0.5,
+        "sigma_init": 0.25,
+        "sigma_min": 0.03,
+        "sigma_max": 0.6,
+        "learning_rate": 0.12,
+        "variance_rate": 0.06,
+        "reward_rate": 0.05,
+        "advantage_gain": 2.0,
+        "seed": 1
+    },
+    "horizon_manager": {
+        "state_weights": null,
+        "discount": 0.98,
+        "terminal_weight": 1.0,
+        "effort_weight": 0.02
     }
 }

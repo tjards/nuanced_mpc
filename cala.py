@@ -1,8 +1,12 @@
 import json
 import numpy as np
 
-# online modeller
-class FeatureMap():
+
+# ---------------------------------
+# Radial-Temporal feature map
+# ---------------------------------
+
+class RTFeatureMap():
     
     def __init__(self):
 
@@ -22,7 +26,6 @@ class FeatureMap():
         self.omega              = cfg_fm["omega"]
         self.normalize          = cfg_fm["normalize"]
   
-
         # define the feature locations
         if self.feature_centers is None:
             xs = np.linspace(self.x_lims[0], self.x_lims[1], self.x_n)
@@ -137,20 +140,19 @@ class FeatureMap():
         fig, ax = plt.subplots(figsize=(7, 7))
         contour = ax.contourf(X,Y,Z,levels=30)
         fig.colorbar(contour,ax=ax,label="Feature activation")
-        ax.scatter(test.centers[:, 0], test.centers[:, 1], marker="x",label="Feature centres")
-        ax.set_title(test.names[feature_index])
+        ax.scatter(self.centers[:, 0], self.centers[:, 1], marker="x",label="Feature centres")
+        ax.set_title(self.names[feature_index])
         ax.set_xlabel("$x_1$")
         ax.set_ylabel("$x_2$")
-        ax.set_xlim(test.x_lims)
-        ax.set_ylim(test.y_lims)
+        ax.set_xlim(self.x_lims)
+        ax.set_ylim(self.y_lims)
         ax.set_aspect("equal")
         ax.grid(True)
         ax.legend()
 
         plt.show()
 
-
-    # Plot activation across x,y,t (fixing one)
+    # plot activation across x,y,t (fixing one)
     def plot_fixed_axis(self, feature_index = 0, fixed_axis = 1, fixed_at = 0.0):
 
         resolution = 200
@@ -206,6 +208,94 @@ class FeatureMap():
 
 
 
+# --------------------------
+# Residual NL Disturbance CALA
+# --------------------------
+
+"""
+Continuous Action Learning Automata for modelling nonlinear residual disturbances.
+
+For each feature i and input dimension j, CALA maintains a Gaussian action
+distribution: a_ij ~ N(mu_ij, sigma_ij^2), where:
+    mu       : (n_features, n_inputs)
+    sigma    : (n_features, n_inputs)
+    action   : (n_features, n_inputs)
+
+The sampled normalized action is clipped to [0, 1] and mapped to a local
+physical residual disturbance: d_local = 2 * d_max * (a_ij - 0.5),
+where: d_local  : (n_features, n_inputs)
+
+The current feature activations are stored as phi : (n_features,)
+
+The final CALA residual disturbance is the feature-weighted sum of the local
+residual disturbances: d_cala = phi @ d_local, with dimensions:
+
+    (n_inputs,) = (n_features,) @ (n_features, n_inputs)
+
+Therefore: d_cala   : (n_inputs,)
+
+This residual can then be added to the existing local disturbance estimate
+used by MPC: d_eff = d_hat + d_cala
+"""
+
+class CALA_NLD():
+
+    def __init__(self, n_features, n_inputs):
+
+        # enforce formats for passed in variables
+        self.n_features = int(n_features)
+        self.n_inputs =  int(n_inputs)
+
+        # bring in configs 
+        with open('configs/config_cala.json') as f:
+            cfg = json.load(f)
+            cfg_cala = cfg["cala_mpc_nld"]
+
+        self.d_max          = cfg_cala["d_max"]
+        self.mu_init        = cfg_cala["mu_init"]
+        self.sigma_init     = cfg_cala["sigma_init"]
+        self.sigma_min      = cfg_cala["sigma_min"]
+        self.sigma_max      = cfg_cala["sigma_max"]
+        self.learning_rate  = cfg_cala["learning_rate"]
+        self.variance_rate  = cfg_cala["variance_rate"]
+        self.reward_rate    = cfg_cala["reward_rate"]
+        self.advantage_gain = cfg_cala["advantage_gain"]
+        self.seed           = cfg_cala["seed"]
+
+        # initialize 
+        self.rng        = np.random.default_rng(self.seed)
+        self.mu         = np.full((self.n_features, self.n_inputs), self.mu_init, dtype=float)            # means
+        self.sigma      = np.full((self.n_features, self.n_inputs), self.sigma_init, dtype=float)      # stds
+        self.action     = np.zeros((self.n_features, self.n_inputs))
+
+        # d_cala (n_actions,) = 
+        self.d_cala     = np.zeros((self.n_inputs))
+
+        # phi (n_features,) @ d_local (n_features, n_actions) 
+        self.phi        = np.zeros((self.n_features))
+        self.d_local    = np.zeros((self.n_features, self.n_inputs))
+
+
+
+
+
+
+
+
+
+    # sample an action from the distributions (exploit or explore)
+    def sample(self, explore = True):
+
+        # default is to explore the distribution
+        if explore:
+            action = self.rng.normal(self.mu, self.sigma)
+        # else, explore the mean
+        else:
+            action = self.mu.copy()
+
+        # note: action size should be (self.n_features, self.n_inputs)
+        return np.clip(action, 0.0, 1.0)
+
 
 #-----------
 # testing     
@@ -213,7 +303,8 @@ class FeatureMap():
 
 import matplotlib.pyplot as plt
 
-test = FeatureMap()
-test.plot_feature(feature_index = 0, t = 0.0)
-test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
+#test = RTFeatureMap()
+#test.plot_feature(feature_index = 0, t = 0.0)
+#test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
 
+test2 = CALA_NLD(7,2)
