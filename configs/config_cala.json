@@ -9,12 +9,18 @@
         "include_bias": true,
         "include_time": true,
         "omega": 0.2,
-        "normalize": true 
+        "normalize": true, 
+        "group_weights": {
+            "bias": 0.2,
+            "radial": 0.4,
+            "time": 0.4
+            } 
     },
     "cala_mpc_nld": {
         "d_max": 0.5,
         "mu_init": 0.5,
-        "sigma_init": 0.25,
+        "mu_init_noise": 0.01,
+        "sigma_init": 0.45,
         "sigma_min": 0.03,
         "sigma_max": 0.6,
         "learning_rate": 0.12,

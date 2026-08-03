@@ -1,5 +1,6 @@
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 # ---------------------------------
@@ -25,6 +26,9 @@ class RTFeatureMap():
         self.include_time       = cfg_fm["include_time"]
         self.omega              = cfg_fm["omega"]
         self.normalize          = cfg_fm["normalize"]
+        self.group_weights      = cfg_fm["group_weights"]
+        if abs(sum(self.group_weights.values()) - 1.0) > 1e-12:
+            raise ValueError("Feature group weights must sum to 1.0") 
   
         # define the feature locations
         if self.feature_centers is None:
@@ -114,13 +118,14 @@ class RTFeatureMap():
             # normalize within each feature set
             for name, index in self.names_index.items():
                 phi[index] = (phi[index]/ (np.sum(phi[index]) + 1e-12))
+                phi[index] *= self.group_weights[name]
 
         self.phi = phi.copy()
 
         return phi
 
     # evaluate one feature over the workspace for plotting
-    def activation_grid(self, feature_index, t, resolution = 70):
+    def activation_grid(self, feature_index, t, resolution = 100):
 
         xs = np.linspace(self.x_lims[0], self.x_lims[1], resolution)
         ys = np.linspace(self.y_lims[0], self.y_lims[1], resolution)
@@ -153,9 +158,8 @@ class RTFeatureMap():
         plt.show()
 
     # plot activation across x,y,t (fixing one)
-    def plot_fixed_axis(self, feature_index = 0, fixed_axis = 1, fixed_at = 0.0):
+    def plot_fixed_axis(self, feature_index = 0, fixed_axis = 1, fixed_at = 0.0, resolution  =100):
 
-        resolution = 200
         xs = np.linspace(self.x_lims[0], self.x_lims[1], resolution)
         ys = np.linspace(self.y_lims[0], self.y_lims[1], resolution)
         times = np.linspace(0.0, 2.0 * np.pi / self.omega, resolution)
@@ -235,7 +239,12 @@ residual disturbances: d_cala = phi @ d_local, with dimensions:
 Therefore: d_cala   : (n_inputs,)
 
 This residual can then be added to the existing local disturbance estimate
-used by MPC: d_eff = d_hat + d_cala
+used by MPC: d_eff = d_hat + d_cala 
+
+
+Note: 
+- treating as a residual disturbance (beyond what is being modelled linearly) creates some dependency on agents velocity, maybe? 
+- I am thinking the direction of travel matters...
 """
 
 class CALA_NLD():
@@ -243,10 +252,9 @@ class CALA_NLD():
     def __init__(self, feature_map, n_inputs):
 
         # enforce formats for passed in variables
-        self.n_features     =  len(feature_map.names)
+        self.feature_map    = feature_map
+        self.n_features     =  len(self.feature_map.names)
         self.n_inputs       =  int(n_inputs)
-        # note: should we store the whole feature map for later?
-
 
         # bring in configs 
         with open('configs/config_cala.json') as f:
@@ -255,6 +263,7 @@ class CALA_NLD():
 
         self.d_max          = cfg_cala["d_max"]
         self.mu_init        = cfg_cala["mu_init"]
+        self.mu_init_noise  = cfg_cala["mu_init_noise"]
         self.sigma_init     = cfg_cala["sigma_init"]
         self.sigma_min      = cfg_cala["sigma_min"]
         self.sigma_max      = cfg_cala["sigma_max"]
@@ -266,7 +275,12 @@ class CALA_NLD():
 
         # initialize 
         self.rng        = np.random.default_rng(self.seed)
-        self.mu         = np.full((self.n_features, self.n_inputs), self.mu_init, dtype=float)            # means
+        self.mu         = np.full((self.n_features, self.n_inputs), self.mu_init, dtype=float)              # means
+
+        if self.mu_init_noise is not None:
+            self.mu = self.rng.normal(self.mu_init, self.mu_init_noise, size=(self.n_features, self.n_inputs))
+            self.mu = np.clip(self.mu, 0.0, 1.0)
+
         self.sigma      = np.full((self.n_features, self.n_inputs), self.sigma_init, dtype=float)      # stds
         self.action     = np.zeros((self.n_features, self.n_inputs))
 
@@ -279,8 +293,14 @@ class CALA_NLD():
         # note: phi comes from feature map - don't duplicate
         #self.phi        = np.zeros((self.n_features)) 
 
+        # reward updates 
+        self.reward_mean = None         # will take value of first reward signal (i.e., not zeros)
+        self.phi = None                 # stores activations
+
+
+
     # sample an action from the distributions (exploit or explore)
-    def sample(self, explore = True):
+    def _sample(self, explore = True):
 
         # default is to explore the distribution
         if explore:
@@ -296,7 +316,7 @@ class CALA_NLD():
         return self.action
 
     # map sample to disturbance correction 
-    def map_sample_to_disturbance(self, phi):
+    def _map_sample_to_disturbance(self, phi):
 
         # reshape to allow either list or array
         phi = np.asarray(phi, dtype=float).reshape(-1)
@@ -313,17 +333,122 @@ class CALA_NLD():
     # combine two above
     def sample_map(self, phi, explore = True):
 
-        # reshape to allow either list or array
+        # reshape to allow either list or array, test dims
         phi = np.asarray(phi, dtype=float).reshape(-1)
-
-        #test
         if phi.shape[0] != self.n_features:
             raise ValueError(f"dimensions of phi: {phi.shape} do not match feature length {self.n_features}") 
 
-        action = self.sample(explore = explore)
-        d_cala = self.map_sample_to_disturbance(phi = phi)
+
+        self.phi = phi.copy()
+        action = self._sample(explore = explore)
+        d_cala = self._map_sample_to_disturbance(phi = phi)
 
         return action, d_cala
+
+    # update the distribution based on a received reward signal
+    def update(self, reward):
+
+        # we need to initialize the reward mean 
+        if self.reward_mean is None:
+            self.reward_mean = float(reward)
+            return 0.0 
+
+        # update reward mean (uses low pass filter, reward_mean = (1-B)reward_mean + B*reward)
+        advantage = reward - self.reward_mean
+        self.reward_mean += self.reward_rate * advantage
+
+        # bound/scale the advantage for cleaner updates
+        advantage_scaled  = np.tanh(self.advantage_gain * advantage)
+
+        # for each feature
+        for i in range(self.n_features):
+
+            # pull out the activation
+            activation = self.phi[i]
+
+            # ignore low values
+            if abs(activation) < 1e-9:
+                continue
+
+            # for each input
+            for j in range(self.n_inputs):
+
+                # good trial
+                if advantage_scaled >= 0.0:
+
+                    # move the mean toward the sampled action
+                    self.mu[i, j] += (self.learning_rate * activation * advantage_scaled * (self.action[i, j] - self.mu[i, j]))
+
+                    # reduce exploration in proportion
+                    self.sigma[i, j] *= (1.0 - self.variance_rate * activation * advantage_scaled)
+
+                # bad trial
+                else:
+
+                    # move the mean away from the sampled action
+                    self.mu[i, j] -= (self.learning_rate * activation * (-advantage_scaled) * (self.action[i, j] - self.mu[i, j]))
+
+                    # increase exploration in proportion
+                    self.sigma[i, j] *= (1.0 + self.variance_rate * activation * (-advantage_scaled))
+
+        # clip stats
+        self.mu     = np.clip(self.mu, 0.0, 1.0)
+        self.sigma  = np.clip(self.sigma, self.sigma_min, self.sigma_max)
+
+        # return
+        return advantage
+
+    # returns d_cala, based on current distro
+    def get_correction(self, phi):
+
+        phi = np.asarray(phi, dtype=float).reshape(-1)
+        if phi.shape[0] != self.n_features:
+            raise ValueError(f"dimensions of phi: {phi.shape} do not match feature length: {self.n_features}")
+
+        return phi @ (2.0 * self.d_max * (self.mu - 0.5))
+
+
+    # evaluate the learned corrections over searchspace
+    def _correction_grid(self, t=0.0, resolution=100):
+
+        xs = np.linspace(self.feature_map.x_lims[0], self.feature_map.x_lims[1], resolution)
+        ys = np.linspace(self.feature_map.y_lims[0], self.feature_map.y_lims[1], resolution)
+        X, Y = np.meshgrid(xs, ys)
+        D = np.zeros((self.n_inputs, resolution, resolution))
+
+        for row in range(resolution):
+            for col in range(resolution):
+                phi = self.feature_map.build_features([X[row, col], Y[row, col]], t)
+                D[:, row, col] = self.get_correction(phi)
+
+        magnitude = np.sqrt(np.sum(D**2, axis=0))
+
+        return X, Y, D, magnitude
+
+    # plot the learned corrections
+    def plot_correction(self, t=0.0, resolution=100):
+
+        X, Y, D, magnitude = self._correction_grid(t=t, resolution=resolution)
+
+        fig, ax = plt.subplots(figsize=(7, 7))
+        contour = ax.contourf(X, Y, magnitude, levels=30)
+        fig.colorbar(contour, ax=ax, label="CALA correction magnitude")
+
+        if self.n_inputs == 2:
+            spacing = max(resolution // 15, 1)
+            ax.quiver(X[::spacing, ::spacing], Y[::spacing, ::spacing], D[0, ::spacing, ::spacing], D[1, ::spacing, ::spacing])
+
+        ax.scatter(self.feature_map.centers[:, 0], self.feature_map.centers[:, 1], marker="x", label="Feature centres")
+        ax.set_title(f"Learned CALA correction at $t={t}$")
+        ax.set_xlabel("$x_0$")
+        ax.set_ylabel("$x_1$")
+        ax.set_xlim(self.feature_map.x_lims)
+        ax.set_ylim(self.feature_map.y_lims)
+        ax.set_aspect("equal")
+        ax.grid(True)
+        ax.legend()
+
+        plt.show()
 
 
 
@@ -336,10 +461,13 @@ import matplotlib.pyplot as plt
 test_map = RTFeatureMap()
 #test.plot_feature(feature_index = 0, t = 0.0)
 #test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
-test_phi = test_map.build_features([0.0], 0.0)
+test_phi = test_map.build_features([0.0, 0.0], 0.0)
 print(f"phi is type: {type(test_phi)} and shape: {test_phi.shape}")
 
 test_cala = CALA_NLD(test_map, 2)
 action, d_cala = test_cala.sample_map(test_phi)
 
 print(f"selected disturbance:  {d_cala}")
+
+print(test_cala.get_correction(test_phi))
+test_cala.plot_correction(t=0.0)
