@@ -211,7 +211,6 @@ class RTFeatureMap():
         plt.show()
 
 
-
 # --------------------------
 # Residual NL Disturbance CALA
 # --------------------------
@@ -451,14 +450,172 @@ class CALA_NLD():
         plt.show()
 
 
+# --------------------------
+# Horizon learning manager 
+# --------------------------
+'''
+Manages actions/rewards over finite prediction horizon
+
+Typical order or ops:
+
+        feature_map = FeatureMap()
+        cala = CALA_NLD(feature_map, n_inputs)
+        horizon_learning_manager = HorizonLearner(feature_map, cala, mpc)
+
+        # before solving MPC
+        if learner.should_start_trial():
+            d_cala = learner.begin_trial(x, t)
+        else:
+            d_cala = learner.current_correction()
+
+        controller.solve(x - xr, u, d_cala=d_cala)
+
+        # save only the first predicted horizon of the CALA trial
+        learner.attach_prediction(
+            controller.result_state_sequence.reshape(controller.h, controller.nx)
+        )
+
+        # after advancing plant/target one step
+        result = learner.record_actual(x - xr)
+
+'''
+
+class HorizonManager():
+
+    def __init__(self, feature_map, cala, mpc):
+
+        with open('configs/config_cala.json') as f:
+
+            cfg = json.load(f)
+            cfg_hm = cfg["horizon_manager"]
+
+        # pull from feature map
+        self.feature_map    = feature_map
+
+        # pull from cala
+        self.cala           = cala
+
+        # pull from mpc
+        self.n_states           = int(mpc.nx)
+        self.n_inputs           = int(mpc.nu)
+        self.h                  = int(mpc.h)
+        self.state_weights      = np.diag(mpc.Q) 
+        #self.effort_weights     = np.diag(mpc.R)
+        self.terminal_weights   = np.diag(mpc.P)
+
+        # pull from configs
+        self.discount           = cfg_hm["discount"]
+
+        # things required for trial tracking 
+        self.active = False         # is it actively collecting eviidence
+        self.trial_step = 0
+        self.predicted = None
+        self.actual = []
+        self.d_cala = np.zeros(self.n_inputs)
+        self.start_time = None
+
+    def begin_trial(self, x, t, explore = True):
+
+        # build feature map for this time/space
+        phi = self.feature_map.build_features(x, t)
+
+        # compute the corresponding disturbance
+        _, d_cala = self.cala.sample_map(phi, explore = explore)
+
+        # re-initialize the things
+        self.active = True
+        self.trial_step = 0
+        self.predicted = None
+        self.actual = []
+        self.d_cala = d_cala.copy()
+        self.start_time = float(t)
+
+        return self.d_cala
+
+    def _update_prediction(self, prediction):
+
+        prediction= np.asarray(prediction, dtype=float)
+        self.predicted = prediction.reshape(self.h, self.n_states).copy()
+
+    def _update_actual(self, x_new):
+
+        # accumulate a list of actual states
+        x_new = np.asarray(x_new, dtype=float).reshape(-1)
+        self.actual.append(x_new.copy())
+        self.trial_step += 1
+
+    def _end_trial(self):
+
+        #add stuff here
+        reward = self._compute_reward()
+        advantage = self.cala.update(reward)
+
+
+        self.active = False
+
+        return reward, advantage
+
+    def _compute_reward(self):
+
+        # error across horizon
+        actual = np.asarray(self.actual, dtype=float)
+        predicted = np.asarray(self.predicted, dtype=float)
+        error = actual - predicted
+
+        # if discount <1, we may weight near term predictions more
+        discounts = self.discount ** np.arange(self.h)
+
+        # weighted state error at each step
+        weighted_error = self.state_weights.reshape(1, self.n_states) * error**2 
+        step_error = np.sum(weighted_error, axis=1)
+        prediction_error = float(np.sum(discounts * step_error))
+
+        # final horizon prediction
+        terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
+
+        cost = (prediction_error + terminal_error)
+        reward = -cost
+
+        return reward
+
+    def update(self, prediction, x):
+
+        if not self.active:
+            return None, None
+
+        # if no prediction loaded (clears beginning of trial)
+        if self.predicted is None:
+            self._update_prediction(prediction)
+
+        # if active (always, unless between trials)
+        self._update_actual(x)
+
+        # if at end of trial (when horizon reached)
+        if self.trial_step >= self.h:
+            return self._end_trial() # returns reward and last advantage
+
+        return None, None
+
+
+
+
+
+
+
+
+
 
 #-----------
 # testing     
 # ---------
 
 import matplotlib.pyplot as plt
+import mpc 
+
+test_mpc = mpc.MPC([0,0,0,0])
 
 test_map = RTFeatureMap()
+
 #test.plot_feature(feature_index = 0, t = 0.0)
 #test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
 test_phi = test_map.build_features([0.0, 0.0], 0.0)
@@ -471,3 +628,5 @@ print(f"selected disturbance:  {d_cala}")
 
 print(test_cala.get_correction(test_phi))
 test_cala.plot_correction(t=0.0)
+
+test_hm = HorizonManager(test_map, test_cala, test_mpc)

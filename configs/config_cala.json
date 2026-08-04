@@ -30,9 +30,6 @@
         "seed": 1
     },
     "horizon_manager": {
-        "state_weights": null,
-        "discount": 0.98,
-        "terminal_weight": 1.0,
-        "effort_weight": 0.02
+        "discount": 0.98
     }
 }
