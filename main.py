@@ -10,6 +10,7 @@ import disturbance_generator
 import mpc 
 import visualization.plot as plot
 from data_manager import Dataset
+import cala
 
 # ------------------------------------------------------------------
 # Pipeline Setup
@@ -17,6 +18,7 @@ from data_manager import Dataset
 pipeline = {
     'model':    False,
     'control':  True,
+    'rl':       True,
     'visuals':  True
 }
 # ------------------------------------------------------------------
@@ -104,6 +106,13 @@ if pipeline['control']:
     # initialize the MPC controller and load params f
     controller = mpc.MPC(x - xr)  # controller uses reference frame with xr at center 
 
+    # ------------------------------------------------------------------
+    # Initialize RL for disturbances   
+    # ------------------------------------------------------------------
+    if pipeline['rl']:
+        cala_horizon_manager = cala.cala_suite(controller)
+    d_adjustment = np.zeros(controller.nu)
+
     if controller.use_learned_model:
         controller.A = A_hat    #modeller.A_hat
         controller.B = B_hat    #modeller.B_hat
@@ -120,6 +129,14 @@ if pipeline['control']:
     print(f'Controller started at time: {round(t)} seconds')
 
     for k in range(int(controller.Tf / controller.Ts)):
+
+        # begin cala trial
+        if pipeline['rl']:
+            d_adjustment = cala.pre_controller(cala_horizon_manager, x, t)
+        else:
+            d_adjustment = np.zeros(controller.nu)
+
+        # note: neeed to modify controller to accept d_adjustment
 
         # run controller
         controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
@@ -140,6 +157,11 @@ if pipeline['control']:
 
         # evolve target
         xr = target.evolve(t)
+
+        # update cala trial
+        if pipeline['rl']:
+            predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
+            cala.post_controller(cala_horizon_manager, predicted_reference, x, xr)
 
         data.stage(phase = 'controller', 
                 step = t, 

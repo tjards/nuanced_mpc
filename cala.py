@@ -4,6 +4,35 @@ import matplotlib.pyplot as plt
 
 
 # ---------------------------------
+# master calls
+# ---------------------------------
+
+def cala_suite(controller):
+
+    feature_map     = RTFeatureMap()
+    cala_nld        = CALA_NLD(feature_map, controller.nu)
+    horizon_manager = HorizonManager(feature_map, cala_nld, controller)
+
+    return horizon_manager
+
+def pre_controller(horizon_manager, x, t):
+
+    if not horizon_manager.active:
+        d_cala = horizon_manager.begin_trial(x, t, explore=True)
+    else:
+        d_cala = horizon_manager.d_cala.copy()
+
+    return d_cala
+
+def post_controller(horizon_manager, predicted_reference, x, xr):
+
+    #predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
+    reward, advantage = horizon_manager.update(predicted_reference, x - xr)
+    if reward is not None:
+        print(f"CALA reward: {reward:.4f}, advantage: {advantage:.4f}")
+
+
+# ---------------------------------
 # Radial-Temporal feature map
 # ---------------------------------
 
@@ -609,24 +638,24 @@ class HorizonManager():
 # testing     
 # ---------
 
-import matplotlib.pyplot as plt
-import mpc 
+# import matplotlib.pyplot as plt
+# import mpc 
 
-test_mpc = mpc.MPC([0,0,0,0])
+# test_mpc = mpc.MPC([0,0,0,0])
 
-test_map = RTFeatureMap()
+# test_map = RTFeatureMap()
 
-#test.plot_feature(feature_index = 0, t = 0.0)
-#test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
-test_phi = test_map.build_features([0.0, 0.0], 0.0)
-print(f"phi is type: {type(test_phi)} and shape: {test_phi.shape}")
+# #test.plot_feature(feature_index = 0, t = 0.0)
+# #test.plot_fixed_axis(feature_index = -1, fixed_axis = 0, fixed_at = 0.0)
+# test_phi = test_map.build_features([0.0, 0.0], 0.0)
+# print(f"phi is type: {type(test_phi)} and shape: {test_phi.shape}")
 
-test_cala = CALA_NLD(test_map, 2)
-action, d_cala = test_cala.sample_map(test_phi)
+# test_cala = CALA_NLD(test_map, 2)
+# action, d_cala = test_cala.sample_map(test_phi)
 
-print(f"selected disturbance:  {d_cala}")
+# print(f"selected disturbance:  {d_cala}")
 
-print(test_cala.get_correction(test_phi))
-test_cala.plot_correction(t=0.0)
+# print(test_cala.get_correction(test_phi))
+# test_cala.plot_correction(t=0.0)
 
-test_hm = HorizonManager(test_map, test_cala, test_mpc)
+# test_hm = HorizonManager(test_map, test_cala, test_mpc)
