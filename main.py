@@ -236,3 +236,9 @@ if pipeline['visuals']:
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
 
 
+    # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
+    if pipeline['rl']:
+        cala_horizon_manager.plot_learning()
+        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=100)
+
+
