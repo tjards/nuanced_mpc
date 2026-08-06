@@ -136,10 +136,9 @@ if pipeline['control']:
         else:
             d_adjustment = np.zeros(controller.nu)
 
-        # note: neeed to modify controller to accept d_adjustment
-
         # run controller
-        controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
+        #controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
+        controller.solve(x - xr, u, d_adjustment=d_adjustment)
 
         # store predicted sequence 
         current_plan = controller.result_state_sequence.reshape(controller.h,controller.nx,).copy()
@@ -230,7 +229,7 @@ if pipeline['visuals']:
         field_in = field
     else:
         field_in = None
-    plot.animate_trajectory(time_history, full_state_history, predicted_sequences, x_target = target_history, field = field_in, filename=animate_path)
+    #plot.animate_trajectory(time_history, full_state_history, predicted_sequences, x_target = target_history, field = field_in, filename=animate_path)
     print('Producing plots...')
     plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)

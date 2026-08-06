@@ -480,8 +480,14 @@ class MPC():
 
         # define disturbance 
         if self.disturbance:
+            # disturbance estimated using basic linear assumption
             self.d_hat_param = cp.Parameter((self.nu, 1), value=self.d_hat)
-            d_offset = self.D_aug @ self.d_hat_param
+            # disturbance estimate adjusted by rl agent
+            self.d_adjustment_param = cp.Parameter((self.nu, 1), value=np.zeros((self.nu, 1)))
+            # just the linear offset (comment this out)
+            #d_offset = self.D_aug @ self.d_hat_param
+            # both the linear offset and the rl-learned adjustment 
+            d_offset = self.D_aug @ (self.d_hat_param + self.d_adjustment_param)
         else:
             d_offset = np.zeros((self.nx * self.h, 1))
 
@@ -518,13 +524,12 @@ class MPC():
         # define the optimization problem
         self.prob = cp.Problem(cp.Minimize(self.opt_cost), self.opt_constraints)
 
-    def solve(self, x0, u0, update_disturbance_estimate = True):
+    def solve(self, x0, u0, update_disturbance_estimate = True, d_adjustment = None):
 
         # 1. Update the parameters
         if self.new_model_parameters:
             self.update_internal_parameters()
             self.new_model_parameters = False  
-            #~
             self.replan_count = -1 
 
         # 2. Initialize variables 
@@ -542,6 +547,11 @@ class MPC():
             self.d_hat, _, _, _ = np.linalg.lstsq(self.B, prediction_error, rcond=None)
         if self.disturbance:
             self.d_hat_param.value = self.d_hat
+            # if provided, apply the rl-learned adjustment 
+            if d_adjustment is not None:
+                self.d_adjustment_param.value = np.asarray(d_adjustment).reshape(-1, 1)
+            else:
+                self.d_adjustment_param.value = np.zeros((self.nu, 1))
 
         # 3. Solve the optimization problem (if triggered)
         self.replan = (self.replan_count < 0 or self.replan_count >= self.replan_trigger)

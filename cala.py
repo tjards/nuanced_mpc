@@ -55,6 +55,7 @@ class RTFeatureMap():
         self.include_time       = cfg_fm["include_time"]
         self.omega              = cfg_fm["omega"]
         self.normalize          = cfg_fm["normalize"]
+        self.normalize_type     = cfg_fm["normalize_type"] 
         self.group_weights      = cfg_fm["group_weights"]
         if abs(sum(self.group_weights.values()) - 1.0) > 1e-12:
             raise ValueError("Feature group weights must sum to 1.0") 
@@ -144,10 +145,18 @@ class RTFeatureMap():
         phi = np.asarray(values)
 
         if self.normalize:
-            # normalize within each feature set
-            for name, index in self.names_index.items():
-                phi[index] = (phi[index]/ (np.sum(phi[index]) + 1e-12))
-                phi[index] *= self.group_weights[name]
+            if self.normalize_type == 'local':
+                # normalize within each feature set
+                for name, index in self.names_index.items():
+                    phi[index] = (phi[index]/ (np.sum(phi[index]) + 1e-12))
+                    phi[index] *= self.group_weights[name]
+
+            elif self.normalize_type == 'softmax':
+                tau = 0.3
+                phi = np.exp(phi / tau) / np.sum(np.exp(phi / tau))
+            else:
+                phi = phi / (np.sum(phi) + 1e-12) # global is default
+                
 
         self.phi = phi.copy()
 
@@ -719,7 +728,7 @@ class HorizonManager():
                 points = ax.scatter(d_cala[:, 0], d_cala[:, 1], c=rewards)
                 fig.colorbar(points, ax=ax, label="Reward")
 
-            ax.plot(d_cala[:, 0], d_cala[:, 1], linestyle="--", alpha=0.5)
+            #ax.plot(d_cala[:, 0], d_cala[:, 1], linestyle="--", alpha=0.5)
             ax.scatter(d_cala[-1, 0], d_cala[-1, 1], marker="x", s=100, label="Latest trial")
             ax.set_title("Empirical reward over CALA corrections")
             ax.set_xlabel("$d_{cala,0}$")

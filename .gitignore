@@ -1,6 +1,7 @@
 data/*
 visualization/animations/*  
 visualization/plots/*
+visualization/cala/*
 logs/*
 docs/cala/*
 
