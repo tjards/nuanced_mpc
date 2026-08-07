@@ -239,5 +239,8 @@ if pipeline['visuals']:
     if pipeline['rl']:
         cala_horizon_manager.plot_learning()
         cala_horizon_manager.cala.plot_correction(t=0.0, resolution=100)
+        cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
+        cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
+        cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
 
 

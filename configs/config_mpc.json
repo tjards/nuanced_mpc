@@ -1,5 +1,5 @@
 {
-    "Tf": 30,
+    "Tf": 300,
     "Ts": 0.1,
     "A": [
         [1, 0, 0.1, 0],
@@ -17,8 +17,8 @@
     "R_diag": [0.01, 0.01],
     "P_diag": "dare",
     "u0": [0, 0],
-    "h": 12,
-    "m": 8,
+    "h": 10,
+    "m": 5,
     "disturbance": true,
     "constraints": {
         "type": "box",
@@ -34,7 +34,7 @@
     "random_seed": 42,
     "enforce_terminal": false,
     "horizon_feasibility_search": false,
-    "use_learned_model": true,
+    "use_learned_model": false,
     "replan_mode": "control_horizon"
 }
 

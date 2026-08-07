@@ -20,12 +20,12 @@
     "cala_mpc_nld": {
         "d_max": 1.0,
         "mu_init": 0.5,
-        "mu_init_noise": 0.1,
-        "sigma_init": 0.20,
+        "mu_init_noise": 0.05,
+        "sigma_init": 0.10,
         "sigma_min": 0.03,
         "sigma_max": 0.6,
-        "learning_rate": 0.20,
-        "variance_rate": 0.20,
+        "learning_rate": 0.30,
+        "variance_rate": 0.50,
         "reward_rate": 0.5,
         "advantage_gain": 2.0,
         "seed": 1

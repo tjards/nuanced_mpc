@@ -17,6 +17,9 @@ def cala_suite(controller):
 
 def pre_controller(horizon_manager, x, t):
 
+    if not horizon_manager.enable:
+        return np.zeros(horizon_manager.n_inputs)
+
     if not horizon_manager.active:
         d_cala = horizon_manager.begin_trial(x, t, explore=True)
     else:
@@ -536,14 +539,15 @@ class HorizonManager():
         # pull from mpc
         self.n_states           = int(mpc.nx)
         self.n_inputs           = int(mpc.nu)
-        self.h                  = int(mpc.h)
+        #self.h                  = int(mpc.h)
+        self.h                  = int(mpc.replan_trigger)
         self.state_weights      = np.diag(mpc.Q) 
         #self.effort_weights     = np.diag(mpc.R)
         self.terminal_weights   = np.diag(mpc.P)
 
         # pull from configs
         self.discount           = cfg_hm["discount"]
-
+        self.enable             = cfg_hm["enable"]
         # things required for trial tracking 
         self.active = False         # is it actively collecting eviidence
         self.trial_step = 0
@@ -585,8 +589,10 @@ class HorizonManager():
 
     def _update_prediction(self, prediction):
 
-        prediction= np.asarray(prediction, dtype=float)
-        self.predicted = prediction.reshape(self.h, self.n_states).copy()
+        #prediction= np.asarray(prediction, dtype=float)
+        #self.predicted = prediction.reshape(self.h, self.n_states).copy()
+        prediction = np.asarray(prediction, dtype=float).reshape(-1, self.n_states)
+        self.predicted = prediction[:self.h, :].copy()
 
     def _update_actual(self, x_new):
 
