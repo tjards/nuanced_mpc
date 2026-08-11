@@ -18,16 +18,16 @@
             } 
     },
     "cala_mpc_nld": {
-        "d_max": 1.0,
+        "d_max": 0.5,
         "mu_init": 0.5,
         "mu_init_noise": 0.1,
         "sigma_init": 0.20,
         "sigma_min": 0.03,
         "sigma_max": 0.6,
-        "learning_rate": 0.20,
-        "variance_rate": 0.20,
-        "reward_rate": 0.5,
-        "advantage_gain": 2.0,
+        "learning_rate": 0.1,
+        "variance_rate": 0.2,
+        "reward_rate": 0.1,
+        "advantage_gain": 1.0,
         "seed": 1
     },
     "horizon_manager": {

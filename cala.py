@@ -278,13 +278,24 @@ residual disturbances: d_cala = phi @ d_local, with dimensions:
 
 Therefore: d_cala   : (n_inputs,)
 
-This residual can then be added to the existing local disturbance estimate
-used by MPC: d_eff = d_hat + d_cala 
+This residual can then be used as follows:
+
+1. if mpc "rl_parameter" is "d_adjustment", it simply adds to the d directly:
+
+    adds to the existing local disturbance estimate used by MPC: d_eff = d_hat + d_cala 
+
+2. if mpc  "rl_parameter" is "R_adjustment", it biases the control effort components of the optimization:
+
+    adjusts weights of R matrix: R = diag[Ro * exp(d_cala[0]), Ro * exp(d_cala[1])]
+
 
 
 Note: 
 - treating as a residual disturbance (beyond what is being modelled linearly) creates some dependency on agents velocity, maybe? 
 - I am thinking the direction of travel matters...
+
+
+
 """
 
 class CALA_NLD():
@@ -641,6 +652,10 @@ class HorizonManager():
         terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
 
         cost = (prediction_error + terminal_error)
+        #cost = prediction_error
+
+
+        
         reward = -cost
 
         return reward, prediction_error, terminal_error

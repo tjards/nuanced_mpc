@@ -111,7 +111,7 @@ if pipeline['control']:
     # ------------------------------------------------------------------
     if pipeline['rl']:
         cala_horizon_manager = cala.cala_suite(controller)
-    d_adjustment = np.zeros(controller.nu)
+    rl_adjustment = np.zeros(controller.nu)
 
     if controller.use_learned_model:
         controller.A = A_hat    #modeller.A_hat
@@ -132,13 +132,13 @@ if pipeline['control']:
 
         # begin cala trial
         if pipeline['rl']:
-            d_adjustment = cala.pre_controller(cala_horizon_manager, x, t)
+            rl_adjustment = cala.pre_controller(cala_horizon_manager, x, t)
         else:
-            d_adjustment = np.zeros(controller.nu)
+            rl_adjustment = np.zeros(controller.nu)
 
         # run controller
         #controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
-        controller.solve(x - xr, u, d_adjustment=d_adjustment)
+        controller.solve(x - xr, u, rl_adjustment=rl_adjustment)
 
         # store predicted sequence 
         current_plan = controller.result_state_sequence.reshape(controller.h,controller.nx,).copy()
@@ -238,9 +238,9 @@ if pipeline['visuals']:
     # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
     if pipeline['rl']:
         cala_horizon_manager.plot_learning()
-        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=100)
-        cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
-        cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
-        cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=0.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
 
 

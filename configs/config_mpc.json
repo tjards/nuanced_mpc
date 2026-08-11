@@ -1,5 +1,5 @@
 {
-    "Tf": 300,
+    "Tf": 500,
     "Ts": 0.1,
     "A": [
         [1, 0, 0.1, 0],
@@ -17,9 +17,10 @@
     "R_diag": [0.01, 0.01],
     "P_diag": "dare",
     "u0": [0, 0],
-    "h": 10,
-    "m": 5,
+    "h": 20,
+    "m": 10,
     "disturbance": true,
+    "rl_parameter": "R", 
     "constraints": {
         "type": "box",
         "x_min": [-5, -5, -1, -1],

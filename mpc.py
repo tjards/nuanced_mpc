@@ -36,18 +36,8 @@ class Modeller():
         with open('configs/config_mpc.json') as f:
             cfg = json.load(f)
 
-        # pull out stuff
-        Ts  = cfg['Ts']  
         A   = 0*np.array(cfg['A'])
         B   = 0*np.array(cfg['B'])  
-        u0  = np.array(cfg['u0'], dtype=float)
-        constraints     = cfg['constraints']
-        learning_rate   = cfg['learning_rate']
-        window_size     = cfg['window_size']
-        optimizer       = cfg['optimizer']
-        random_seed     = cfg['random_seed']
-        update_parameters_rate = cfg['update_parameters_rate']
-        #logging         = cfg['logging']
 
         # assign 
         self.A_hat  = np.array(A, ndmin=2)
@@ -55,15 +45,15 @@ class Modeller():
         self.nx     = int(A.shape[0])
         self.nu     = int(B.shape[1])
         
-        self.constraints = constraints
-        self.window_size    = int(window_size)        
+        self.constraints    = cfg['constraints'] #constraints
+        self.window_size    = cfg['window_size'] #int(window_size)        
         self.Phi            = np.zeros((self.nx, self.nx + self.nu))  
-        self.learning_rate  = learning_rate
-        self.optimizer      = optimizer
-        self.random_seed    = random_seed
+        self.learning_rate  = cfg['learning_rate'] #learning_rate
+        self.optimizer      = cfg['optimizer'] #optimizer
+        self.random_seed    = cfg['random_seed'] #random_seed
         
-        self.update_parameters_rate = int(update_parameters_rate) 
-        self.update_parameters_count = 0
+        self.update_parameters_rate     = int(cfg['update_parameters_rate']) 
+        self.update_parameters_count    = 0
 
         self.X = np.zeros((self.nx, self.window_size))
         self.U = np.zeros((self.nu, self.window_size))
@@ -74,8 +64,8 @@ class Modeller():
 
         self.viable = False
 
-        self.Ts = Ts
-        self.u0 = u0
+        self.Ts = cfg['Ts']  #Ts
+        self.u0 = np.array(cfg['u0'], dtype=float) #u0
 
         #self.logging = logging 
 
@@ -228,32 +218,16 @@ class MPC():
 
         with open('configs/config_mpc.json') as f:
             cfg = json.load(f)
-
-        # pull out stuff
-        Ts  = cfg['Ts']  
-        Tf  = cfg['Tf']
-        A   = np.array(cfg['A'])
-        B   = np.array(cfg['B'])
-        Q   = np.diag(cfg['Q_diag'])
-        R   = np.diag(cfg['R_diag'])
-        P   = cfg['P_diag']  
-        u0  = np.array(cfg['u0'], dtype=float)
-        h   = cfg['h']
-        m   = cfg['m']
-        constraints                 = cfg['constraints']
-        disturbance                 = cfg['disturbance']
-        use_learned_model           = cfg['use_learned_model']
-        enforce_terminal            = cfg['enforce_terminal']
-        horizon_feasibility_search  = cfg['horizon_feasibility_search']
         
-        # assign
-        self.A = np.array(A, ndmin=2)           # state matrix  
-        self.B = np.array(B, ndmin=2)           # input matrix
-        self.Q = np.array(Q, ndmin=2)           # state cost matrix
-        self.R = np.array(R, ndmin=2)           # input cost matrix
-        self.P_cfg = P                          # nominally 'dare', but takes hardcoded matrix        
+        # model
+        self.A = np.array(np.array(cfg['A']), ndmin=2)           # state matrix  
+        self.B = np.array(np.array(cfg['B']), ndmin=2)           # input matrix
+        self.Q = np.array(np.diag(cfg['Q_diag']), ndmin=2)       # state cost matrix
+        self.R = np.array(np.diag(cfg['R_diag']), ndmin=2)       # input cost matrix
 
         # we can compute terminal cost based on solution to Discrete Algebraic Riccati Equation
+        P   = cfg['P_diag']
+        self.P_cfg = cfg['P_diag']                            # nominally 'dare', but takes hardcoded matrix   
         if isinstance(P, str) and P.lower() == 'dare':
             self.P = solve_discrete_are(self.A, self.B, self.Q, self.R)  
         # or hardcoded
@@ -261,15 +235,15 @@ class MPC():
             self.P = np.array(P, ndmin=2)       # terminal
 
         self.x0 = np.array(x0).reshape(-1, 1)   # initial state
-        self.u0 = np.array(u0).reshape(-1, 1)   # initial input
-        self.h = h                              # prediction horizon
-        self.m = m                              # control horizon (inputs freeze after m <= h)
+        self.u0 = np.array(np.array(cfg['u0'], dtype=float)).reshape(-1, 1)   # initial input
+        self.h = cfg['h']                       # prediction horizon
+        self.m = cfg['m']                       # control horizon (inputs freeze after m <= h)
         self.nx = self.A.shape[0]               # state dimensions
         self.nu = self.B.shape[1]               # input dimensions
-        self.constraints = constraints
-        self.disturbance = disturbance
-        self.Ts = Ts
-        self.Tf = Tf
+        self.constraints = cfg['constraints']   # constraints
+        self.disturbance = cfg['disturbance']
+        self.Ts = cfg['Ts']  
+        self.Tf = cfg['Tf'] 
 
         # for feasibility checks
         self.h_max = 100
@@ -277,11 +251,11 @@ class MPC():
         self.h_min_feasible = None
 
         # for learning
-        self.use_learned_model = use_learned_model
+        self.use_learned_model = cfg['use_learned_model']
 
         # terminal constraints
-        self.enforce_terminal = enforce_terminal
-        self.horizon_feasibility_search = horizon_feasibility_search
+        self.enforce_terminal = cfg['enforce_terminal']
+        self.horizon_feasibility_search = cfg['horizon_feasibility_search']
 
         # receding horizon config
         self.replan         = True
@@ -296,6 +270,10 @@ class MPC():
             self.replan_trigger = self.h
         else:
             raise ValueError(f'invalid replan mode: {self.replan_mode}.')
+
+        # RL may tune R, so we will create a separate parameter for this
+        self.rl_parameter = cfg['rl_parameter'] # options: None, d (disturbance estimate), R (input weights in objective function)
+        self.R0 = np.asarray(self.R).copy()
 
         # we can do disturbance rejection
         if self.disturbance:
@@ -491,12 +469,23 @@ class MPC():
         else:
             d_offset = np.zeros((self.nx * self.h, 1))
 
+        # inputs matrix (this needs to be augmented for the full horizon)
+        self.R_aug_param = cp.Parameter((self.nu * self.h, self.nu * self.h), PSD=True)
+        if self.rl_parameter == 'R':
+            _R_aug_val = np.zeros((self.nu * self.h, self.nu * self.h))
+            for i in range(self.h):
+                _R_aug_val[i*self.nu:(i+1)*self.nu, i*self.nu:(i+1)*self.nu] = self.R0
+            self.R_aug_param.value = _R_aug_val
+        else:
+            self.R_aug_param.value = self.R_aug.copy()
+
         # define s, which is the predicted state sequence over h
         self.s = cp.Variable((self.nx * self.h, 1))
         x_pred_expr = self.A_aug @ self.x0_param + self.B_aug @ self.u_full + d_offset
 
         # define the cost function (quadratic over s)
-        self.opt_cost = cp.quad_form(self.s, self.Q_aug) + cp.quad_form(self.u_full, self.R_aug)
+        #self.opt_cost = cp.quad_form(self.s, self.Q_aug) + cp.quad_form(self.u_full, self.R_aug)
+        self.opt_cost = cp.quad_form(self.s, self.Q_aug) + cp.quad_form(self.u_full, self.R_aug_param)
         
         # constrain s to the dynamics (this connects s to the predicted state sequence)
         self.opt_constraints = [self.s == x_pred_expr]
@@ -524,7 +513,7 @@ class MPC():
         # define the optimization problem
         self.prob = cp.Problem(cp.Minimize(self.opt_cost), self.opt_constraints)
 
-    def solve(self, x0, u0, update_disturbance_estimate = True, d_adjustment = None):
+    def solve(self, x0, u0, update_disturbance_estimate = True, rl_adjustment = None):
 
         # 1. Update the parameters
         if self.new_model_parameters:
@@ -545,13 +534,46 @@ class MPC():
         if self.disturbance and self.x_prev is not None and update_disturbance_estimate:
             prediction_error = self.x0 - self.A @ self.x_prev - self.B @ self.u_prev
             self.d_hat, _, _, _ = np.linalg.lstsq(self.B, prediction_error, rcond=None)
+
         if self.disturbance:
             self.d_hat_param.value = self.d_hat
-            # if provided, apply the rl-learned adjustment 
-            if d_adjustment is not None:
-                self.d_adjustment_param.value = np.asarray(d_adjustment).reshape(-1, 1)
-            else:
-                self.d_adjustment_param.value = np.zeros((self.nu, 1))
+
+        # if self.disturbance:
+        #     self.d_hat_param.value = self.d_hat
+        #     # if provided, apply the rl-learned adjustment
+        #     if rl_adjustment is not None and self.rl_parameter == 'd':
+        #         self.d_adjustment_param.value = np.asarray(rl_adjustment).reshape(-1, 1)
+        #     else:
+        #         self.d_adjustment_param.value = np.zeros((self.nu, 1))
+
+        # 2.b. Reinforce learning part
+
+        # initialize
+        if self.disturbance:
+            self.d_adjustment_param.value = np.zeros((self.nu, 1)) # we keep a zero'd param either way
+        self.R_aug_param.value = self.R_aug
+
+        # use the rl_adjustment based on config
+        if rl_adjustment is not None:
+
+            if self.rl_parameter == 'd':
+
+                self.d_adjustment_param.value = np.asarray(rl_adjustment).reshape(-1, 1)
+
+            elif self.rl_parameter == 'R':
+
+                R_scale = np.exp(np.asarray(rl_adjustment).reshape(-1))   # shape (nu,)
+                R_diag  = np.diag(self.R0) * R_scale                      # shape (nu,), element-wise
+                _R_aug_val = np.zeros((self.nu * self.h, self.nu * self.h))
+                for i in range(self.h):
+                    _R_aug_val[i*self.nu:(i+1)*self.nu, i*self.nu:(i+1)*self.nu] = np.diag(R_diag)
+                self.R_aug_param.value = _R_aug_val
+
+            elif self.rl_parameter is not None:
+
+                raise ValueError(f"Unknown RL parameter {self.rl_parameter}. Choose None if no RL.")
+
+
 
         # 3. Solve the optimization problem (if triggered)
         self.replan = (self.replan_count < 0 or self.replan_count >= self.replan_trigger)
