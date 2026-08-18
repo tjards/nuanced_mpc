@@ -166,6 +166,7 @@ if pipeline['control']:
         # update cala trial
         if pipeline['rl']:
             predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
+            cala_horizon_manager.d_hat = controller.d_hat.copy()
             cala.post_controller(cala_horizon_manager, predicted_reference, x, xr)
 
         data.stage(phase = 'controller', 

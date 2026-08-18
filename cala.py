@@ -21,11 +21,11 @@ def pre_controller(horizon_manager, x, t):
         return np.zeros(horizon_manager.n_inputs)
 
     if not horizon_manager.active:
-        d_cala = horizon_manager.begin_trial(x, t, explore=True)
+        rl_adjustment = horizon_manager.begin_trial(x, t, explore=True)
     else:
-        d_cala = horizon_manager.d_cala.copy()
+        rl_adjustment = horizon_manager.rl_adjustment.copy()
 
-    return d_cala
+    return rl_adjustment
 
 def post_controller(horizon_manager, predicted_reference, x, xr):
 
@@ -272,21 +272,21 @@ where: d_local  : (n_features, n_inputs)
 The current feature activations are stored as phi : (n_features,)
 
 The final CALA residual disturbance is the feature-weighted sum of the local
-residual disturbances: d_cala = phi @ d_local, with dimensions:
+residual disturbances: rl_adjustment = phi @ d_local, with dimensions:
 
     (n_inputs,) = (n_features,) @ (n_features, n_inputs)
 
-Therefore: d_cala   : (n_inputs,)
+Therefore: rl_adjustment   : (n_inputs,)
 
 This residual can then be used as follows:
 
 1. if mpc "rl_parameter" is "d_adjustment", it simply adds to the d directly:
 
-    adds to the existing local disturbance estimate used by MPC: d_eff = d_hat + d_cala 
+    adds to the existing local disturbance estimate used by MPC: d_eff = d_hat + rl_adjustment 
 
 2. if mpc  "rl_parameter" is "R_adjustment", it biases the control effort components of the optimization:
 
-    adjusts weights of R matrix: R = diag[Ro * exp(d_cala[0]), Ro * exp(d_cala[1])]
+    adjusts weights of R matrix: R = diag[Ro * exp(rl_adjustment[0]), Ro * exp(rl_adjustment[1])]
 
 
 
@@ -335,8 +335,8 @@ class CALA_NLD():
         self.sigma      = np.full((self.n_features, self.n_inputs), self.sigma_init, dtype=float)      # stds
         self.action     = np.zeros((self.n_features, self.n_inputs))
 
-        # d_cala (n_inputs,) = 
-        self.d_cala     = np.zeros((self.n_inputs))
+        # rl_adjustment (n_inputs,) = 
+        self.rl_adjustment     = np.zeros((self.n_inputs))
 
         # phi (n_features,) @ d_local (n_features, n_inputs) c        
         self._d_local   = np.zeros((self.n_features, self.n_inputs)) # use _ because it's kind of just an internal param
@@ -376,10 +376,10 @@ class CALA_NLD():
         self._d_local = 2.0 * self.d_max * (self.action - 0.5)
 
         # blend local features into one input signal
-        self.d_cala = phi @ self._d_local
+        self.rl_adjustment = phi @ self._d_local
 
         # note: this should be the size of the inputs now
-        return self.d_cala
+        return self.rl_adjustment
 
     # combine two above
     def sample_map(self, phi, explore = True):
@@ -392,9 +392,9 @@ class CALA_NLD():
 
         self.phi = phi.copy()
         action = self._sample(explore = explore)
-        d_cala = self._map_sample_to_disturbance(phi = phi)
+        rl_adjustment = self._map_sample_to_disturbance(phi = phi)
 
-        return action, d_cala
+        return action, rl_adjustment
 
     # update the distribution based on a received reward signal
     def update(self, reward):
@@ -451,7 +451,7 @@ class CALA_NLD():
         # return
         return advantage
 
-    # returns d_cala, based on current distro
+    # returns rl_adjustment, based on current distro
     def get_correction(self, phi):
 
         phi = np.asarray(phi, dtype=float).reshape(-1)
@@ -518,11 +518,11 @@ Typical order or ops:
 
         # before solving MPC
         if learner.should_start_trial():
-            d_cala = learner.begin_trial(x, t)
+            rl_adjustment = learner.begin_trial(x, t)
         else:
-            d_cala = learner.current_correction()
+            rl_adjustment = learner.current_correction()
 
-        controller.solve(x - xr, u, d_cala=d_cala)
+        controller.solve(x - xr, u, rl_adjustment=rl_adjustment)
 
         # save only the first predicted horizon of the CALA trial
         learner.attach_prediction(
@@ -571,9 +571,9 @@ class HorizonManager():
         #self.reward_period = self.replan_trigger 
         self.reward_period = cfg_hm["reward_period"]
         if self.reward_period > 1:
-            raise ValueError(f"reward_period must be set to 1 (for now)")
+           raise ValueError(f"reward_period must be set to 1 (for now)")
         if mpc.replan_mode != 'receding_horizon':
-            raise ValueError(f"mpc must be set to receding horizon control (for now)")
+           raise ValueError(f"mpc must be set to receding horizon control (for now)")
    
 
         #if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
@@ -592,8 +592,9 @@ class HorizonManager():
         self.predicted = None
         self.actual = []
         self.d_mean = np.zeros(self.n_inputs)
-        self.d_cala = np.zeros(self.n_inputs)
+        self.rl_adjustment = np.zeros(self.n_inputs)
         self.d_true = np.zeros(self.n_inputs) # used for some rewards
+        self.d_hat = np.zeros(self.n_inputs) # the linear assumption
         self.start_time = None
 
         # storage
@@ -603,8 +604,9 @@ class HorizonManager():
             "advantage": [],
             "prediction_error": [],
             "terminal_error": [],
-            "d_cala": [],
+            "rl_adjustment": [],
             "d_true": [],
+            "d_hat": [],
             "d_mean": [],
             "mu": [],
             "sigma": [],
@@ -620,7 +622,7 @@ class HorizonManager():
         d_mean = self.cala.get_correction(phi)
 
         # compute the corresponding disturbance
-        _, d_cala = self.cala.sample_map(phi, explore = explore)
+        _, rl_adjustment = self.cala.sample_map(phi, explore = explore)
 
         # re-initialize the things
         self.active = True
@@ -628,10 +630,10 @@ class HorizonManager():
         self.predicted = None
         self.actual = []
         self.d_mean = d_mean.copy()
-        self.d_cala = d_cala.copy()
+        self.rl_adjustment = rl_adjustment.copy()
         self.start_time = float(t)
 
-        return self.d_cala
+        return self.rl_adjustment
 
     def _update_prediction(self, prediction):
 
@@ -660,8 +662,9 @@ class HorizonManager():
         self.history["advantage"].append(advantage)
         self.history["prediction_error"].append(prediction_error)
         self.history["terminal_error"].append(terminal_error)
-        self.history["d_cala"].append(self.d_cala.copy())
+        self.history["rl_adjustment"].append(self.rl_adjustment.copy())
         self.history["d_true"].append(self.d_true.copy())
+        self.history["d_hat"].append(self.d_hat.copy())
         self.history["d_mean"].append(self.d_mean.copy())
         self.history["mu"].append(self.cala.mu.copy())
         self.history["sigma"].append(self.cala.sigma.copy())
@@ -700,10 +703,10 @@ class HorizonManager():
 
         elif self.reward_mode == 'idealized':
 
-            disturbance_error = self.d_cala - self.d_true
-            cost = (np.dot(disturbance_error, disturbance_error)+ self.compensation_weight* np.dot(self.d_cala, self.d_cala))
+            disturbance_error = self.rl_adjustment - self.d_true
+            cost = (np.dot(disturbance_error, disturbance_error)+ self.compensation_weight* np.dot(self.rl_adjustment, self.rl_adjustment))
 
-        # infer the equivalent input-channel prediction residual B*e_x = d_true - d_cala
+        # infer the equivalent input-channel prediction residual B*e_x = d_true - rl_adjustment
         elif self.reward_mode == 'prediction_infer':
 
             disturbance_error = np.linalg.lstsq(self.B, error.T, rcond=None)[0].T
@@ -753,9 +756,19 @@ class HorizonManager():
         advantages = np.asarray(self.history["advantage"])
         prediction_errors = np.asarray(self.history["prediction_error"])
         terminal_errors = np.asarray(self.history["terminal_error"])
-        d_cala = np.asarray(self.history["d_cala"])
-        d_true = np.asarray(self.history["d_true"])
-        d_mean = np.asarray(self.history["d_mean"])
+        rl_adjustment = np.asarray(self.history["rl_adjustment"], dtype=float).reshape(-1, self.n_inputs)
+        d_true = np.asarray(self.history["d_true"], dtype=float).reshape(-1, self.n_inputs)
+        d_hat  = np.asarray(self.history["d_hat"],  dtype=float).reshape(-1, self.n_inputs)
+        d_mean = np.asarray(self.history["d_mean"], dtype=float).reshape(-1, self.n_inputs)
+
+        # linear disturbance rejection error
+        error_linear = (d_true - d_hat)**2
+        # learned CALA mean added to linear rejection
+        error_combined_mean = (d_true - d_hat - d_mean)**2
+        # actual sampled CALA correction used during training
+        #error_combined_sample = d_true - d_hat - rl_adjustment
+
+
         sigma = np.asarray(self.history["sigma"])
 
         # reward and advantage history
@@ -785,7 +798,7 @@ class HorizonManager():
         # correction history
         fig, ax = plt.subplots(figsize=(9, 6))
         for j in range(self.n_inputs):
-            ax.plot(steps, d_cala[:, j], marker="o", label=f"$d_{{cala,{j}}}$")
+            ax.plot(steps, rl_adjustment[:, j], marker="o", label=f"$d_{{cala,{j}}}$")
         ax.axhline(0.0, linestyle="--")
         ax.set_title("CALA correction history")
         ax.set_xlabel("Trial start time")
@@ -802,17 +815,17 @@ class HorizonManager():
 
             if len(rewards) >= 3:
                 try:
-                    contour = ax.tricontourf(d_cala[:, 0], d_cala[:, 1], rewards, levels=30)
+                    contour = ax.tricontourf(rl_adjustment[:, 0], rl_adjustment[:, 1], rewards, levels=30)
                     fig.colorbar(contour, ax=ax, label="Reward")
                 except RuntimeError:
-                    points = ax.scatter(d_cala[:, 0], d_cala[:, 1], c=rewards)
+                    points = ax.scatter(rl_adjustment[:, 0], rl_adjustment[:, 1], c=rewards)
                     fig.colorbar(points, ax=ax, label="Reward")
             else:
-                points = ax.scatter(d_cala[:, 0], d_cala[:, 1], c=rewards)
+                points = ax.scatter(rl_adjustment[:, 0], rl_adjustment[:, 1], c=rewards)
                 fig.colorbar(points, ax=ax, label="Reward")
 
-            #ax.plot(d_cala[:, 0], d_cala[:, 1], linestyle="--", alpha=0.5)
-            ax.scatter(d_cala[-1, 0], d_cala[-1, 1], marker="x", s=100, label="Latest trial")
+            #ax.plot(rl_adjustment[:, 0], rl_adjustment[:, 1], linestyle="--", alpha=0.5)
+            ax.scatter(rl_adjustment[-1, 0], rl_adjustment[-1, 1], marker="x", s=100, label="Latest trial")
             ax.set_title("Empirical reward over CALA corrections")
             ax.set_xlabel("$d_{cala,0}$")
             ax.set_ylabel("$d_{cala,1}$")
@@ -852,11 +865,19 @@ class HorizonManager():
             # # actual learned / sampled CALA correction
             # ax.plot(
             #     steps,
-            #     d_cala[:, j],
+            #     rl_adjustment[:, j],
             #     marker="o",
             #     markersize=3,
             #     label=f"$d_{{cala,{j}}}$"
             # )
+
+            # linear-assumed disturbance
+            ax.plot(
+                steps,
+                d_hat[:, j],
+                linestyle="-",
+                label=f"$d_{{hat,{j}}}$"
+            )
 
             # true disturbance
             ax.plot(
@@ -873,8 +894,26 @@ class HorizonManager():
                 label=f"$d_{{mean,{j}}}$"
             )
 
-            ax.axhline(0.0, linestyle="--", linewidth=1)
+            # # linear-assumed disturbance
+            # ax.plot(
+            #     steps,
+            #     error_linear[:, j],
+            #     linestyle="-",
+            #     label=f"just dhat"
+            # )
+
+            # # true disturbance
+            # ax.plot(
+            #     steps,
+            #     error_combined_mean[:,j],
+            #     linestyle=":",
+            #     label=f"combined"
+            # )
+
+            #ax.axhline(0.0, linestyle="--", linewidth=1)
             ax.set_ylabel("Disturbance")
+            #ax.set_ylabel("Error")
+            #ax.set_ylim([0, 0.5])
             ax.grid(True)
             ax.legend()
         axes[-1].set_xlabel("Trial start time")
@@ -907,9 +946,9 @@ class HorizonManager():
 # print(f"phi is type: {type(test_phi)} and shape: {test_phi.shape}")
 
 # test_cala = CALA_NLD(test_map, 2)
-# action, d_cala = test_cala.sample_map(test_phi)
+# action, rl_adjustment = test_cala.sample_map(test_phi)
 
-# print(f"selected disturbance:  {d_cala}")
+# print(f"selected disturbance:  {rl_adjustment}")
 
 # print(test_cala.get_correction(test_phi))
 # test_cala.plot_correction(t=0.0)

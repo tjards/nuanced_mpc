@@ -538,7 +538,7 @@ class MPC():
 
         if self.disturbance:
             if self.disturbance_enable_linear_rejection:
-                self.d_hat_param.value = self.d_hat
+                self.d_hat_param.value = self.d_hat.copy()
             else:
                 self.d_hat_param.value = np.zeros((self.nu, 1))
 
