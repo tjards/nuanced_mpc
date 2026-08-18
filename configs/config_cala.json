@@ -21,9 +21,9 @@
         "d_max": 10.0,
         "mu_init": 0.5,
         "mu_init_noise": 0.01,
-        "sigma_init": 0.15,
+        "sigma_init": 0.30,
         "sigma_min": 0.03,
-        "sigma_max": 0.25,
+        "sigma_max": 0.35,
         "learning_rate": 0.3,
         "variance_rate": 0.2,
         "reward_rate": 0.05,
@@ -31,9 +31,11 @@
         "seed": 1
     },
     "horizon_manager": {
-        "discount": 1.0, 
+        "discount": 0.95, 
         "enable": true,
-        "reward_mode": "compensation",
-        "compensation_weight": 0.01
+        "reward_mode": "prediction_infer",
+        "compensation_weight": 0.01,
+        "reward_period": 1
+
     }
 }

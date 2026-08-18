@@ -558,6 +558,7 @@ class HorizonManager():
         self.state_weights      = np.diag(mpc.Q) 
         #self.effort_weights     = np.diag(mpc.R)
         self.terminal_weights   = np.diag(mpc.P)
+        self.B                  = np.asarray(mpc.B).copy()
 
 
         # reward configs
@@ -567,11 +568,18 @@ class HorizonManager():
         # else:
         #     self.reward_period = cfg_hm["reward_period"]
 
-        self.reward_period = self.replan_trigger 
+        #self.reward_period = self.replan_trigger 
+        self.reward_period = cfg_hm["reward_period"]
+        if self.reward_period > 1:
+            raise ValueError(f"reward_period must be set to 1 (for now)")
+        if mpc.replan_mode != 'receding_horizon':
+            raise ValueError(f"mpc must be set to receding horizon control (for now)")
+   
 
-        if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
-            raise ValueError(f"Cannot use prediction-error based RL reward when MPC replan_mode is receding horizon. Select horizon (h) or control (m) horizon.")
+        #if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
+        #    raise ValueError(f"Cannot use prediction-error based RL reward when MPC replan_mode is receding horizon. Select horizon (h) or control (m) horizon.")
         
+
 
         self.compensation_weight = cfg_hm["compensation_weight"]
 
@@ -664,34 +672,51 @@ class HorizonManager():
 
     def _compute_reward(self):
 
-        actual = np.asarray(self.actual, dtype=float)
-        predicted = np.asarray(self.predicted, dtype=float)
+        # actual = np.asarray(self.actual, dtype=float)
+        # predicted = np.asarray(self.predicted, dtype=float)
+
+        # tighter
+        actual = np.asarray(self.actual, dtype=float).reshape(-1, self.n_states)
+        predicted = np.asarray(self.predicted,dtype=float).reshape(-1, self.n_states)
+        # number of valid state comparisons in this trial
+        n = min(actual.shape[0], predicted.shape[0])
+        if n == 0:
+            raise RuntimeError("Cannot compute reward: no actual/predicted states available.")
+        actual = actual[:n, :]
+        predicted = predicted[:n, :]
+
+
         error = actual - predicted
-        discounts = self.discount ** np.arange(self.h)
+        discounts = self.discount ** np.arange(n)
 
         weighted_error = self.state_weights.reshape(1, self.n_states) * error**2
         step_error = np.sum(weighted_error, axis=1)
-        #prediction_error = float(np.sum(discounts * step_error))
         prediction_error = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12))
-
-
         terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
 
         if self.reward_mode == "prediction":
 
             cost = prediction_error 
 
-        elif self.reward_mode == 'compensation':
+        elif self.reward_mode == 'idealized':
 
             disturbance_error = self.d_cala - self.d_true
             cost = (np.dot(disturbance_error, disturbance_error)+ self.compensation_weight* np.dot(self.d_cala, self.d_cala))
+
+        # infer the equivalent input-channel prediction residual B*e_x = d_true - d_cala
+        elif self.reward_mode == 'prediction_infer':
+
+            disturbance_error = np.linalg.lstsq(self.B, error.T, rcond=None)[0].T
+            step_error = np.sum(disturbance_error**2,axis=1)
+            cost = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12) )
 
         else:
 
             raise ValueError(f"invalid reward mode: {self.reward_mode}")
 
-
         reward = -cost
+        #reward = np.exp(-cost / 10)
+        #reward = -np.log1p(cost)
 
         return reward, prediction_error, terminal_error
 
