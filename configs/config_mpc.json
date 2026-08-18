@@ -1,5 +1,5 @@
 {
-    "Tf": 500,
+    "Tf": 200,
     "Ts": 0.1,
     "A": [
         [1, 0, 0.1, 0],
@@ -17,14 +17,15 @@
     "R_diag": [0.01, 0.01],
     "P_diag": "dare",
     "u0": [0, 0],
-    "h": 20,
-    "m": 10,
+    "h": 10,
+    "m": 5,
     "disturbance": true,
-    "rl_parameter": "R", 
+    "disturbance_enable_linear_rejection": false,
+    "rl_parameter": "d", 
     "constraints": {
         "type": "box",
-        "x_min": [-5, -5, -1, -1],
-        "x_max": [5, 5, 1, 1],
+        "x_min": [-5, -5, -5, -5],
+        "x_max": [5, 5, 5, 5],
         "u_min": [-200, -200],
         "u_max": [200, 200]
     },
@@ -36,7 +37,7 @@
     "enforce_terminal": false,
     "horizon_feasibility_search": false,
     "use_learned_model": false,
-    "replan_mode": "control_horizon"
+    "replan_mode": "receding_horizon"
 }
 
 

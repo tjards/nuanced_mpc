@@ -405,8 +405,10 @@ class CALA_NLD():
             return 0.0 
 
         # update reward mean (uses low pass filter, reward_mean = (1-B)reward_mean + B*reward)
-        advantage = reward - self.reward_mean
-        self.reward_mean += self.reward_rate * advantage
+
+        reward_error = reward - self.reward_mean
+        advantage = reward_error / (abs(self.reward_mean) + 1e-8)
+        self.reward_mean += self.reward_rate * reward_error
 
         # bound/scale the advantage for cleaner updates
         advantage_scaled  = np.tanh(self.advantage_gain * advantage)
@@ -552,9 +554,23 @@ class HorizonManager():
         self.n_inputs           = int(mpc.nu)
         #self.h                  = int(mpc.h)
         self.h                  = int(mpc.replan_trigger)
+        self.replan_trigger     = int(mpc.replan_trigger) 
         self.state_weights      = np.diag(mpc.Q) 
         #self.effort_weights     = np.diag(mpc.R)
         self.terminal_weights   = np.diag(mpc.P)
+
+
+        # reward configs
+        self.reward_mode = cfg_hm["reward_mode"]  # "prediction" or "period_error"
+        if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
+            raise ValueError(f"Cannot use prediction-error based RL reward when MPC replan_mode is receding horizon. Select horizon (h) or control (m) horizon.")
+
+        if self.reward_mode != "period_error":
+            self.reward_period = self.replan_trigger# self.h
+        else:
+            self.reward_period = cfg_hm["reward_period"]
+
+        self.compensation_weight = cfg_hm["compensation_weight"]
 
         # pull from configs
         self.discount           = cfg_hm["discount"]
@@ -564,7 +580,9 @@ class HorizonManager():
         self.trial_step = 0
         self.predicted = None
         self.actual = []
+        self.d_mean = np.zeros(self.n_inputs)
         self.d_cala = np.zeros(self.n_inputs)
+        self.d_true = np.zeros(self.n_inputs) # used for some rewards
         self.start_time = None
 
         # storage
@@ -575,6 +593,8 @@ class HorizonManager():
             "prediction_error": [],
             "terminal_error": [],
             "d_cala": [],
+            "d_true": [],
+            "d_mean": [],
             "mu": [],
             "sigma": [],
         }
@@ -585,6 +605,9 @@ class HorizonManager():
         # build feature map for this time/space
         phi = self.feature_map.build_features(x, t)
 
+        # get the means
+        d_mean = self.cala.get_correction(phi)
+
         # compute the corresponding disturbance
         _, d_cala = self.cala.sample_map(phi, explore = explore)
 
@@ -593,6 +616,7 @@ class HorizonManager():
         self.trial_step = 0
         self.predicted = None
         self.actual = []
+        self.d_mean = d_mean.copy()
         self.d_cala = d_cala.copy()
         self.start_time = float(t)
 
@@ -626,6 +650,8 @@ class HorizonManager():
         self.history["prediction_error"].append(prediction_error)
         self.history["terminal_error"].append(terminal_error)
         self.history["d_cala"].append(self.d_cala.copy())
+        self.history["d_true"].append(self.d_true.copy())
+        self.history["d_mean"].append(self.d_mean.copy())
         self.history["mu"].append(self.cala.mu.copy())
         self.history["sigma"].append(self.cala.sigma.copy())
 
@@ -635,27 +661,36 @@ class HorizonManager():
 
     def _compute_reward(self):
 
-        # error across horizon
         actual = np.asarray(self.actual, dtype=float)
         predicted = np.asarray(self.predicted, dtype=float)
         error = actual - predicted
-
-        # if discount <1, we may weight near term predictions more
         discounts = self.discount ** np.arange(self.h)
 
-        # weighted state error at each step
-        weighted_error = self.state_weights.reshape(1, self.n_states) * error**2 
+        weighted_error = self.state_weights.reshape(1, self.n_states) * error**2
         step_error = np.sum(weighted_error, axis=1)
-        prediction_error = float(np.sum(discounts * step_error))
+        #prediction_error = float(np.sum(discounts * step_error))
+        prediction_error = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12))
 
-        # final horizon prediction
+
         terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
 
-        cost = (prediction_error + terminal_error)
-        #cost = prediction_error
+        if self.reward_mode == "prediction":
+
+            cost = prediction_error 
+
+        elif self.reward_mode == 'compensation':
+
+            #cancel_err = self.d_cala + self.d_true 
+            #cost = np.dot(cancel_err, cancel_err) + self.compensation_weight * np.dot(self.d_cala , self.d_cala)
+
+            disturbance_error = self.d_cala - self.d_true
+            cost = (np.dot(disturbance_error, disturbance_error)+ self.compensation_weight* np.dot(self.d_cala, self.d_cala))
 
 
-        
+        else:  # "period_error": actual tracking error vs target over reward_period steps
+
+            cost = prediction_error
+
         reward = -cost
 
         return reward, prediction_error, terminal_error
@@ -665,15 +700,15 @@ class HorizonManager():
         if not self.active:
             return None, None, None, None
 
-        # if no prediction loaded (clears beginning of trial)
-        if self.predicted is None:
+        # if no prediction loaded (clears beginning of trial) - only needed for prediction mode
+        if self.predicted is None: #and self.reward_mode == "prediction":
             self._update_prediction(prediction)
 
         # if active (always, unless between trials)
         self._update_actual(x)
 
-        # if at end of trial (when horizon reached)
-        if self.trial_step >= self.h:
+        # if at end of trial (when period reached)
+        if self.trial_step >= self.reward_period:
             return self._end_trial() # returns reward and last advantage
 
         return None, None, None, None
@@ -694,6 +729,8 @@ class HorizonManager():
         prediction_errors = np.asarray(self.history["prediction_error"])
         terminal_errors = np.asarray(self.history["terminal_error"])
         d_cala = np.asarray(self.history["d_cala"])
+        d_true = np.asarray(self.history["d_true"])
+        d_mean = np.asarray(self.history["d_mean"])
         sigma = np.asarray(self.history["sigma"])
 
         # reward and advantage history
@@ -775,7 +812,55 @@ class HorizonManager():
 
         print(f"CALA plots saved to: {folder}")
 
+        # compare d's 
+        #d_target = d_true / (1.0 + self.compensation_weight)
+        fig, axes = plt.subplots(
+            self.n_inputs,
+            1,
+            figsize=(9, 3.5 * self.n_inputs),
+            sharex=True
+        )
+        if self.n_inputs == 1:
+            axes = [axes]
+        for j, ax in enumerate(axes):
 
+            # # actual learned / sampled CALA correction
+            # ax.plot(
+            #     steps,
+            #     d_cala[:, j],
+            #     marker="o",
+            #     markersize=3,
+            #     label=f"$d_{{cala,{j}}}$"
+            # )
+
+            # true disturbance
+            ax.plot(
+                steps,
+                d_true[:, j],
+                linestyle=":",
+                label=f"$d_{{true,{j}}}$"
+            )
+            # theoretically optimal compensation
+            ax.plot(
+                steps,
+                d_mean[:, j],
+                linestyle="--",
+                label=f"$d_{{mean,{j}}}$"
+            )
+
+            ax.axhline(0.0, linestyle="--", linewidth=1)
+            ax.set_ylabel("Disturbance")
+            ax.grid(True)
+            ax.legend()
+        axes[-1].set_xlabel("Trial start time")
+        fig.suptitle("CALA compensation tracking")
+        fig.tight_layout()
+        fig.savefig(
+            f"{folder}/compensation_tracking.png",
+            dpi=200,
+            bbox_inches="tight"
+        )
+        plt.close(fig)
 
 
 

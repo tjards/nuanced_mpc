@@ -49,6 +49,16 @@ class Target:
             self.x_phase        = self.rng.uniform(*_x_phase)
             self.y_phase        = self.rng.uniform(*_y_phase)
 
+            # store wander param ranges for per-period re-randomization
+            self._wander_ranges = {
+                'x_scale': _x_scale, 'y_scale': _y_scale,
+                'skew': _skew, 'rotation': _rotation,
+                'x_wobble': _x_wobble, 'y_wobble': _y_wobble,
+                'x_wobble_freq': _x_wobble_freq, 'y_wobble_freq': _y_wobble_freq,
+                'x_phase': _x_phase, 'y_phase': _y_phase,
+            }
+            self._current_period = -1
+
     def evolve(self, t):
 
         if self.dynamics == "wander":
@@ -56,6 +66,25 @@ class Target:
             # complete one figure eight every period seconds
             progress    = (t % self.period) / self.period
             theta       = 2.0 * np.pi * progress
+
+            # re-randomize at the start of each new period
+            period_index = int(t // self.period)
+            if period_index != self._current_period:
+                self._current_period = period_index
+                r = self._wander_ranges
+                self.x_scale       = self.rng.uniform(*r['x_scale'])
+                self.y_scale       = self.rng.uniform(*r['y_scale'])
+                self.skew          = self.rng.uniform(*r['skew'])
+                self.rotation      = self.rng.uniform(*r['rotation'])
+                self.x_wobble      = self.rng.uniform(*r['x_wobble'])
+                self.y_wobble      = self.rng.uniform(*r['y_wobble'])
+                self.x_wobble_freq = self.rng.uniform(*r['x_wobble_freq'])
+                self.y_wobble_freq = self.rng.uniform(*r['y_wobble_freq'])
+                self.x_phase       = self.rng.uniform(*r['x_phase'])
+                self.y_phase       = self.rng.uniform(*r['y_phase'])
+                # drift center to a new location within the space
+                #self.center[0] = self.rng.uniform(-2.0, 2.0)
+                #self.center[1] = self.rng.uniform(-2.0, 2.0)
 
             # base figure-eight shape
             x           = self.x_scale * np.sin(theta)

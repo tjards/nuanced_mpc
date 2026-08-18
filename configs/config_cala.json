@@ -2,36 +2,39 @@
     "feature_map":{
         "x_lims": [-5, 5],
         "y_lims": [-5, 5],
-        "x_n": 7,
-        "y_n": 7,
-        "sigma_factor": 0.9,
+        "x_n": 5,
+        "y_n": 5,
+        "sigma_factor": 0.7,
         "feature_centers": null,
-        "include_bias": false,
+        "include_bias": true,
         "include_time": true,
         "omega": 0.2,
         "normalize": true,
         "normalize_type": "local",  
         "group_weights": {
-            "bias": 0,
-            "radial": 0.5,
-            "time": 0.5
+            "bias": 0.15,
+            "radial": 0.7,
+            "time": 0.15
             } 
     },
     "cala_mpc_nld": {
-        "d_max": 0.5,
+        "d_max": 10.0,
         "mu_init": 0.5,
-        "mu_init_noise": 0.1,
-        "sigma_init": 0.20,
+        "mu_init_noise": 0.01,
+        "sigma_init": 0.15,
         "sigma_min": 0.03,
-        "sigma_max": 0.6,
-        "learning_rate": 0.1,
+        "sigma_max": 0.25,
+        "learning_rate": 0.3,
         "variance_rate": 0.2,
-        "reward_rate": 0.1,
-        "advantage_gain": 1.0,
+        "reward_rate": 0.05,
+        "advantage_gain": 0.5,
         "seed": 1
     },
     "horizon_manager": {
-        "discount": 0.99, 
-        "enable": true
+        "discount": 1.0, 
+        "enable": true,
+        "reward_mode": "compensation",
+        "compensation_weight": 0.01,
+        "reward_period": 5
     }
 }

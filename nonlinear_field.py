@@ -74,6 +74,7 @@ class VortexField:
 
         self.config = VortexConfig()
         print('vortex initialized')
+        self.plot_field_at_t('visualization/plots/field.png', 0)
 
     def evolve_centers(self, t):
 

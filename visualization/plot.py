@@ -152,6 +152,7 @@ def animate_trajectory(time_history, state_history, predicted_sequences, field =
         return trace_line, cur_dot, pred_line, pred_dots, cur_target, trace_target
 
     def update(frame):
+
         
         #disturbance update
         if field is not None:

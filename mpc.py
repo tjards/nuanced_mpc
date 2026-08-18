@@ -263,7 +263,7 @@ class MPC():
         self.plan_index     = 0
         self.replan_mode    = cfg['replan_mode']
         if self.replan_mode == 'receding_horizon':
-            self.replan_trigger = 0
+            self.replan_trigger = 1
         elif self.replan_mode == 'control_horizon':
             self.replan_trigger = self.m 
         elif self.replan_mode == 'prediction_horizon':
@@ -282,6 +282,7 @@ class MPC():
             self.u_prev = None                   # previous commanded input
         else:
             self.d_hat = None
+        self.disturbance_enable_linear_rejection = cfg['disturbance_enable_linear_rejection']
         
         self.update_internal_parameters()  
         self.new_model_parameters = False
@@ -536,7 +537,13 @@ class MPC():
             self.d_hat, _, _, _ = np.linalg.lstsq(self.B, prediction_error, rcond=None)
 
         if self.disturbance:
-            self.d_hat_param.value = self.d_hat
+            if self.disturbance_enable_linear_rejection:
+                self.d_hat_param.value = self.d_hat
+            else:
+                self.d_hat_param.value = np.zeros((self.nu, 1))
+
+
+
 
         # if self.disturbance:
         #     self.d_hat_param.value = self.d_hat
@@ -556,7 +563,7 @@ class MPC():
         # use the rl_adjustment based on config
         if rl_adjustment is not None:
 
-            if self.rl_parameter == 'd':
+            if self.rl_parameter == 'd' and self.disturbance:
 
                 self.d_adjustment_param.value = np.asarray(rl_adjustment).reshape(-1, 1)
 
@@ -569,7 +576,7 @@ class MPC():
                     _R_aug_val[i*self.nu:(i+1)*self.nu, i*self.nu:(i+1)*self.nu] = np.diag(R_diag)
                 self.R_aug_param.value = _R_aug_val
 
-            elif self.rl_parameter is not None:
+            elif self.rl_parameter not in ('d', 'R', None):
 
                 raise ValueError(f"Unknown RL parameter {self.rl_parameter}. Choose None if no RL.")
 

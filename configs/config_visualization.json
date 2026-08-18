@@ -5,5 +5,5 @@
     "plot_field_path": "visualization/plots/field.png",
     "animate_field": "visualization/animations/field.gif",
     "keep_modelling_history": false,
-    "show_field": true
+    "show_field": false
 }

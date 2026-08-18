@@ -130,11 +130,16 @@ if pipeline['control']:
 
     for k in range(int(controller.Tf / controller.Ts)):
 
+        # evolve the disturbance
+        d = disturbor.evolve(field = field, x = x, t = t)
+
+
         # begin cala trial
         if pipeline['rl']:
             rl_adjustment = cala.pre_controller(cala_horizon_manager, x, t)
+            cala_horizon_manager.d_true = d.copy()
         else:
-            rl_adjustment = np.zeros(controller.nu)
+            rl_adjustment = None
 
         # run controller
         #controller.solve(x - xr, u)  # controller uses reference frame with xr at center 
@@ -146,16 +151,17 @@ if pipeline['control']:
         current_plan += xr
 
         # apply first control input 
-        u = controller.result_control_next.flatten()
+        u = controller.result_control_next.flatten() 
 
         # evolve the disturbance
-        d = disturbor.evolve(field = field, x = x, t = t)
+        #d = disturbor.evolve(field = field, x = x, t = t)
 
         # evolve the plant
         x = plant.evolve(x, u, d, disturb=True)
 
         # evolve target
-        xr = target.evolve(t)
+        #xr = target.evolve(t)
+        xr = target.evolve(t+controller.Ts)
 
         # update cala trial
         if pipeline['rl']:
@@ -168,7 +174,7 @@ if pipeline['control']:
                 B_hat = controller.B, 
                 d_hat = controller.d_hat, 
                 d = plant.d, 
-                target = xr, 
+                target = target.evolve(t), 
                 state = x, 
                 input = u, 
                 plan = current_plan)
@@ -221,26 +227,28 @@ if pipeline['visuals']:
         target_history            = list(controller_data["target"]) 
 
 
+
+    print('Producing plots...')
+    plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
+    plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
+
+
     #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
     
+    # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
+    if pipeline['rl']:
+        cala_horizon_manager.plot_learning()
+    #    cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200)
+    #     cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
+    #     cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
+
+
     print('Producing animation...')
 
     if show_field and disturbor.dist_type == 'field':
         field_in = field
     else:
         field_in = None
+
     #plot.animate_trajectory(time_history, full_state_history, predicted_sequences, x_target = target_history, field = field_in, filename=animate_path)
-    print('Producing plots...')
-    plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
-    plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
-
-
-    # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
-    if pipeline['rl']:
-        cala_horizon_manager.plot_learning()
-    #     cala_horizon_manager.cala.plot_correction(t=0.0, resolution=100)
-    #     cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
-    #     cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
-    #     cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
-
-
