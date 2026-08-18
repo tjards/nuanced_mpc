@@ -34,7 +34,6 @@
         "discount": 1.0, 
         "enable": true,
         "reward_mode": "compensation",
-        "compensation_weight": 0.01,
-        "reward_period": 5
+        "compensation_weight": 0.01
     }
 }

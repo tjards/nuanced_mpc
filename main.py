@@ -231,6 +231,7 @@ if pipeline['visuals']:
     print('Producing plots...')
     plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
+    plot.plot_trajectory(controller_data['step'],controller_data['state'],x_target=controller_data['target'],filename='visualization/plots/trajectory.png')
 
 
     #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)

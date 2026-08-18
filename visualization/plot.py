@@ -283,3 +283,80 @@ def plot_velocities(time_history, state_history, constraints, vel_indices=None, 
     plt.savefig(filename, dpi=150)
     print(f"Velocity plot saved to '{filename}'")
     plt.close(fig)
+
+
+def plot_trajectory(time_history, state_history, x_target=None, filename='trajectory.png'):
+
+    states = np.array(state_history)   # shape: (T, nx)
+
+    if states.ndim != 2 or states.shape[1] < 2:
+        raise ValueError("state_history must have shape (T, nx) with nx >= 2")
+
+    # optional target history
+    target = None
+    if x_target is not None:
+        target = np.array(x_target)
+        if target.ndim == 1:
+            target = target.reshape(1, -1)
+
+    # --------------------------------------------------------------
+    # Plot bounds
+    # --------------------------------------------------------------
+    all_pts = [states[:, :2]]
+
+    if target is not None and target.shape[1] >= 2:
+        all_pts.append(target[:, :2])
+
+    all_pts = np.vstack(all_pts)
+    margin = 0.5
+
+    x1_min = all_pts[:, 0].min() - margin
+    x1_max = all_pts[:, 0].max() + margin
+    x2_min = all_pts[:, 1].min() - margin
+    x2_max = all_pts[:, 1].max() + margin
+
+    # make square
+    r1 = x1_max - x1_min
+    r2 = x2_max - x2_min
+    if r1 > r2:
+        pad = 0.5 * (r1 - r2)
+        x2_min -= pad
+        x2_max += pad
+    else:
+        pad = 0.5 * (r2 - r1)
+        x1_min -= pad
+        x1_max += pad
+
+    # --------------------------------------------------------------
+    # Plot
+    # --------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    # actual trajectory
+    ax.plot(states[:, 0], states[:, 1], color='royalblue', lw=2.0, label='trajectory', zorder=3)
+
+    # start and end
+    ax.plot(states[0, 0], states[0, 1], 'ro', markersize=8, label='start', zorder=5)
+    ax.plot(states[-1, 0], states[-1, 1], 'o', color='royalblue', markersize=8, label='end', zorder=5)
+
+    # target history or final target
+    if target is not None and target.shape[1] >= 2:
+        if len(target) == len(states):
+            ax.plot(target[:, 0], target[:, 1], color='green', lw=2.0, alpha=0.9, label='target path', zorder=2)
+            ax.plot(target[-1, 0], target[-1, 1], 'g+', markersize=14, markeredgewidth=2, label='final target', zorder=6)
+        else:
+            ax.plot(target[-1, 0], target[-1, 1], 'g+', markersize=14, markeredgewidth=2, label='target', zorder=6)
+
+    ax.set_xlim(x1_min, x1_max)
+    ax.set_ylim(x2_min, x2_max)
+    ax.set_xlabel('$x_1$  (position)', fontsize=12)
+    ax.set_ylabel('$x_2$  (position)', fontsize=12)
+    ax.set_title('Trajectory', fontsize=13)
+    ax.grid(True, linestyle=':', alpha=0.5)
+    ax.set_aspect('equal')
+    ax.legend(loc='upper right', fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=150)
+    print(f"Trajectory plot saved to '{filename}'")
+    plt.close(fig)

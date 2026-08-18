@@ -561,14 +561,17 @@ class HorizonManager():
 
 
         # reward configs
-        self.reward_mode = cfg_hm["reward_mode"]  # "prediction" or "period_error"
+        self.reward_mode = cfg_hm["reward_mode"]
+        # if self.reward_mode == 'prediction':
+        #     self.reward_period = self.replan_trigger 
+        # else:
+        #     self.reward_period = cfg_hm["reward_period"]
+
+        self.reward_period = self.replan_trigger 
+
         if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
             raise ValueError(f"Cannot use prediction-error based RL reward when MPC replan_mode is receding horizon. Select horizon (h) or control (m) horizon.")
-
-        if self.reward_mode != "period_error":
-            self.reward_period = self.replan_trigger# self.h
-        else:
-            self.reward_period = cfg_hm["reward_period"]
+        
 
         self.compensation_weight = cfg_hm["compensation_weight"]
 
@@ -680,16 +683,13 @@ class HorizonManager():
 
         elif self.reward_mode == 'compensation':
 
-            #cancel_err = self.d_cala + self.d_true 
-            #cost = np.dot(cancel_err, cancel_err) + self.compensation_weight * np.dot(self.d_cala , self.d_cala)
-
             disturbance_error = self.d_cala - self.d_true
             cost = (np.dot(disturbance_error, disturbance_error)+ self.compensation_weight* np.dot(self.d_cala, self.d_cala))
 
+        else:
 
-        else:  # "period_error": actual tracking error vs target over reward_period steps
+            raise ValueError(f"invalid reward mode: {self.reward_mode}")
 
-            cost = prediction_error
 
         reward = -cost
 
