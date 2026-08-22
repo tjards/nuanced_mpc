@@ -591,7 +591,7 @@ class HorizonManager():
         self.trial_step = 0
         self.predicted = None
         self.actual = []
-        self.d_mean = np.zeros(self.n_inputs)
+        self.rl_mean = np.zeros(self.n_inputs)
         self.rl_adjustment = np.zeros(self.n_inputs)
         self.d_true = np.zeros(self.n_inputs) # used for some rewards
         self.d_hat = np.zeros(self.n_inputs) # the linear assumption
@@ -607,7 +607,7 @@ class HorizonManager():
             "rl_adjustment": [],
             "d_true": [],
             "d_hat": [],
-            "d_mean": [],
+            "rl_mean": [],
             "mu": [],
             "sigma": [],
         }
@@ -619,7 +619,7 @@ class HorizonManager():
         phi = self.feature_map.build_features(x, t)
 
         # get the means
-        d_mean = self.cala.get_correction(phi)
+        rl_mean = self.cala.get_correction(phi)
 
         # compute the corresponding disturbance
         _, rl_adjustment = self.cala.sample_map(phi, explore = explore)
@@ -629,7 +629,7 @@ class HorizonManager():
         self.trial_step = 0
         self.predicted = None
         self.actual = []
-        self.d_mean = d_mean.copy()
+        self.rl_mean = rl_mean.copy()
         self.rl_adjustment = rl_adjustment.copy()
         self.start_time = float(t)
 
@@ -665,7 +665,7 @@ class HorizonManager():
         self.history["rl_adjustment"].append(self.rl_adjustment.copy())
         self.history["d_true"].append(self.d_true.copy())
         self.history["d_hat"].append(self.d_hat.copy())
-        self.history["d_mean"].append(self.d_mean.copy())
+        self.history["rl_mean"].append(self.rl_mean.copy())
         self.history["mu"].append(self.cala.mu.copy())
         self.history["sigma"].append(self.cala.sigma.copy())
 
@@ -713,6 +713,64 @@ class HorizonManager():
             step_error = np.sum(disturbance_error**2,axis=1)
             cost = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12) )
 
+        elif self.reward_mode == 'for_r':
+
+            pass
+            cost = 0
+
+            # --------------------------------------------------------------
+            # R-learning reward
+            #
+            # Goal:
+            #   1. reward progress toward target
+            #   2. penalize excessive net control action
+            #   3. mildly penalize actual commanded control effort
+            #
+            # Since:
+            #
+            #       x+ = A x + B (u + d)
+            #
+            # and d_hat ~= d_true, then:
+            #
+            #       u + d_hat
+            #
+            # approximates the nominal control action seen by the plant after
+            # disturbance compensation.
+            # --------------------------------------------------------------
+
+            '''
+            x_start = np.asarray(self.x_start, dtype=float).reshape(-1)
+            x_end   = np.asarray(actual[-1], dtype=float).reshape(-1)
+
+            u       = np.asarray(self.u_applied, dtype=float).reshape(-1)
+            d_hat   = np.asarray(self.d_hat, dtype=float).reshape(-1)
+
+            # state cost before and after this CALA trial
+            V_start = float(np.sum(self.state_weights * x_start**2))
+            V_end   = float(np.sum(self.state_weights * x_end**2))
+
+            # positive if state improved
+            progress = V_start - V_end
+
+            # effective nominal plant input after disturbance cancellation
+            u_net = u + d_hat
+
+            # fixed evaluation costs -- do NOT use the CALA-adjusted R here
+            net_effort     = float(np.dot(u_net, u_net))
+            command_effort = float(np.dot(u, u))
+
+            # reward weights
+            lambda_net = 0.01
+            lambda_u   = 0.001
+
+            # convert to cost because reward = -cost below
+            cost = (
+                -progress
+                + lambda_net * net_effort
+                + lambda_u * command_effort
+            )
+            '''
+
         else:
 
             raise ValueError(f"invalid reward mode: {self.reward_mode}")
@@ -759,12 +817,12 @@ class HorizonManager():
         rl_adjustment = np.asarray(self.history["rl_adjustment"], dtype=float).reshape(-1, self.n_inputs)
         d_true = np.asarray(self.history["d_true"], dtype=float).reshape(-1, self.n_inputs)
         d_hat  = np.asarray(self.history["d_hat"],  dtype=float).reshape(-1, self.n_inputs)
-        d_mean = np.asarray(self.history["d_mean"], dtype=float).reshape(-1, self.n_inputs)
+        rl_mean = np.asarray(self.history["rl_mean"], dtype=float).reshape(-1, self.n_inputs)
 
         # linear disturbance rejection error
         error_linear = (d_true - d_hat)**2
         # learned CALA mean added to linear rejection
-        error_combined_mean = (d_true - d_hat - d_mean)**2
+        error_combinerl_mean = (d_true - d_hat - rl_mean)**2
         # actual sampled CALA correction used during training
         #error_combined_sample = d_true - d_hat - rl_adjustment
 
@@ -889,7 +947,7 @@ class HorizonManager():
             # theoretically optimal compensation
             ax.plot(
                 steps,
-                d_mean[:, j],
+                rl_mean[:, j],
                 linestyle="--",
                 label=f"$d_{{mean,{j}}}$"
             )

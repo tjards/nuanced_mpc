@@ -1,0 +1,41 @@
+{
+    "feature_map":{
+        "x_lims": [-5, 5],
+        "y_lims": [-5, 5],
+        "x_n": 5,
+        "y_n": 5,
+        "sigma_factor": 0.7,
+        "feature_centers": null,
+        "include_bias": true,
+        "include_time": true,
+        "omega": 0.2,
+        "normalize": true,
+        "normalize_type": "local",  
+        "group_weights": {
+            "bias": 0.15,
+            "radial": 0.7,
+            "time": 0.15
+            } 
+    },
+    "cala_mpc_nld": {
+        "d_max": 10.0,
+        "mu_init": 0.5,
+        "mu_init_noise": 0.01,
+        "sigma_init": 0.30,
+        "sigma_min": 0.03,
+        "sigma_max": 0.35,
+        "learning_rate": 0.3,
+        "variance_rate": 0.2,
+        "reward_rate": 0.05,
+        "advantage_gain": 0.5,
+        "seed": 1
+    },
+    "horizon_manager": {
+        "discount": 0.95, 
+        "enable": true,
+        "reward_mode": "prediction_infer",
+        "compensation_weight": 0.01,
+        "reward_period": 1
+
+    }
+}
