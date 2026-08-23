@@ -236,17 +236,14 @@ if pipeline['visuals']:
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
     plot.plot_trajectory(controller_data['step'],controller_data['state'],x_target=controller_data['target'],filename='visualization/plots/trajectory.png')
 
-
-    #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
-    
     # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
     if pipeline['rl']:
         cala_horizon_manager.plot_learning()
         cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200)
-    #     cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
-    #     cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
-    #     cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)
 
+    # old (keep for now)
+    #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
+    
 
     print('Producing animation...')
 
