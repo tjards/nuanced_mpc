@@ -2,17 +2,19 @@ import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import h5py
 
 
 # ---------------------------------
 # master calls
 # ---------------------------------
 
-def cala_suite(controller):
+def cala_suite(controller, filepath="data/cala_learning.h5", overwrite=True):
 
     feature_map     = RTFeatureMap()
     cala_nld        = CALA_NLD(feature_map, controller.nu)
-    horizon_manager = HorizonManager(feature_map, cala_nld, controller)
+    cala_data = CALADataset(filepath=filepath, overwrite=overwrite)
+    horizon_manager = HorizonManager(feature_map, cala_nld, controller, data=cala_data)
 
     return horizon_manager
 
@@ -476,7 +478,7 @@ class CALA_NLD():
         return X, Y, D, magnitude
 
     # plots a nice map of the computed correction (mean value)
-    def plot_correction(self, t=0.0, resolution=100):
+    def plot_correction(self, t=0.0, resolution=100, folder = 'visualization/cala/'):
 
         X, Y, D, magnitude = self._correction_grid(t=t, resolution=resolution)
 
@@ -512,7 +514,8 @@ class CALA_NLD():
 
             fig.suptitle(f"Learning - Learned R Adjustment Field at $t={t}$")
             fig.tight_layout()
-            fig.savefig(f"visualization/cala/Learning - Learned R Adjustment Field at t -{int(t)}.png", dpi=200, bbox_inches="tight")
+            fig.savefig(os.path.join(folder, f"Learning - Learned R Adjustment Field at t -{int(t)}.png"), dpi=200, bbox_inches="tight")
+            #fig.savefig(f"visualization/cala/Learning - Learned R Adjustment Field at t -{int(t)}.png", dpi=200, bbox_inches="tight")
             plt.close(fig)
 
         else:
@@ -542,7 +545,7 @@ class CALA_NLD():
 
 class HorizonManager():
 
-    def __init__(self, feature_map, cala, mpc):
+    def __init__(self, feature_map, cala, mpc, data=None):
 
         with open('configs/config_cala.json') as f:
 
@@ -609,7 +612,10 @@ class HorizonManager():
         self.net_effort             = 0.0
         self.disturbance_energy     = 0.0
 
+        self.data = data
+
         # storage (probably storing too much)
+        '''
         self.history = {
 
             # basic
@@ -655,7 +661,7 @@ class HorizonManager():
             "advantage_scaled": [],
             "phi": []
             }
-
+        '''
     def begin_trial(self, x, t, x_error = None, explore = True):
 
         # build feature map for this time/space
@@ -740,48 +746,65 @@ class HorizonManager():
             d_residual_sampled = float(np.linalg.norm(self.d_true - self.d_hat - self.rl_adjustment))
             d_residual_mean = float(np.linalg.norm(self.d_true - self.d_hat - self.rl_mean))
 
-        # store stuff
-        self.history["step"].append(self.start_time)
-        self.history["reward"].append(reward)
-        self.history["advantage"].append(advantage)
-        self.history["prediction_error"].append(prediction_error)
-        self.history["terminal_error"].append(terminal_error)
-        self.history["rl_adjustment"].append(self.rl_adjustment.copy())
-        self.history["d_true"].append(self.d_true.copy())
-        self.history["d_hat"].append(self.d_hat.copy())
-        self.history["rl_mean"].append(self.rl_mean.copy())
-        self.history["mu"].append(self.cala.mu.copy())
-        self.history["sigma"].append(self.cala.sigma.copy())
 
-        # performance
-        self.history["tracking_rmse"].append(tracking_rmse)
-        self.history["position_rmse"].append(position_rmse)
-        self.history["final_distance"].append(final_distance)
-        self.history["success"].append(success)
-        self.history["settling_steps"].append(settling_steps)
-        self.history["settling_time"].append(settling_time)
-        self.history["state_cost"].append(state_cost)
+        # ---------------------------------------------
+        # store completed CALA trial
+        # ---------------------------------------------
 
-        # prediction
-        self.history["prediction_rmse"].append(prediction_rmse)
-        self.history["prediction_position_rmse"].append(prediction_position_rmse)
+        if self.data is not None:
 
-        # control
-        self.history["control_effort"].append(control_effort)
-        self.history["effort_ratio"].append(effort_ratio)
+            self.data.stage(
 
-        # disturbance rejection
-        self.history["d_hat_error"].append(d_hat_error)
-        self.history["d_residual_sampled"].append(d_residual_sampled)
-        self.history["d_residual_mean"].append(d_residual_mean)
+                phase="learning",
 
-        # R-learning
-        self.history["progress"].append(float(self.progress))
-        self.history["command_effort"].append(float(self.command_effort))
-        self.history["net_effort"].append(float(self.net_effort))
-        self.history["disturbance_energy"].append(float(self.disturbance_energy))
-        self.history["advantage_scaled"].append(self.cala.last_advantage_scaled)
-        self.history["phi"].append(self.cala.phi.copy())
+                # basic
+                step=self.start_time,
+                reward=reward,
+                advantage=advantage,
+                prediction_error=prediction_error,
+                terminal_error=terminal_error,
+                rl_adjustment=self.rl_adjustment,
+                d_true=self.d_true,
+                d_hat=self.d_hat,
+                rl_mean=self.rl_mean,
+                mu=self.cala.mu,
+                sigma=self.cala.sigma,
+
+                # performance
+                tracking_rmse=tracking_rmse,
+                position_rmse=position_rmse,
+                final_distance=final_distance,
+                success=success,
+                settling_steps=settling_steps,
+                settling_time=settling_time,
+                state_cost=state_cost,
+
+                # prediction
+                prediction_rmse=prediction_rmse,
+                prediction_position_rmse=prediction_position_rmse,
+
+                # control
+                control_effort=control_effort,
+                effort_ratio=effort_ratio,
+
+                # disturbance rejection
+                d_hat_error=d_hat_error,
+                d_residual_sampled=d_residual_sampled,
+                d_residual_mean=d_residual_mean,
+
+                # R-learning
+                progress=self.progress,
+                command_effort=self.command_effort,
+                net_effort=self.net_effort,
+                disturbance_energy=self.disturbance_energy,
+                advantage_scaled=self.cala.last_advantage_scaled,
+
+                # feature activation
+                phi=self.cala.phi,
+            )
+
+            # write this completed trial immediately
+            self.data.store()
 
         self.active = False
 
@@ -885,7 +908,8 @@ class HorizonManager():
             # 7. Final R-learning cost
             # ----------------------------------------------------------
 
-            cost = (-self.progress + self.r_lambda_effort * self.net_effort)
+            cost = (-self.progress + self.r_lambda_effort * self.net_effort) # 0.015 is a good r_lambda_effort
+            #cost = -self.progress
 
         else:
 
@@ -915,44 +939,60 @@ class HorizonManager():
 
         return None, None, None, None
 
-    def plot_learning(self, folder="visualization/cala"):
+    def plot_learning(self, folder="visualization/cala", phase="learning"):
 
         os.makedirs(folder, exist_ok=True)
 
-        if len(self.history["reward"]) == 0:
+        if self.data is None:
+            print("No CALA dataset attached.")
+            return
+
+        if len(self.data) == 0:
             print("No completed CALA trials to plot.")
             return
 
-        # history
-        # -------
-        steps = np.asarray(self.history["step"])
-        rewards = np.asarray(self.history["reward"])
-        advantages = np.asarray(self.history["advantage"])
-        prediction_errors = np.asarray(self.history["prediction_error"])
-        terminal_errors = np.asarray(self.history["terminal_error"])
-        rl_adjustment = np.asarray(self.history["rl_adjustment"], dtype=float).reshape(-1, self.n_inputs)
-        d_true = np.asarray(self.history["d_true"], dtype=float).reshape(-1, self.n_inputs)
-        d_hat = np.asarray(self.history["d_hat"], dtype=float).reshape(-1, self.n_inputs)
-        rl_mean = np.asarray(self.history["rl_mean"], dtype=float).reshape(-1, self.n_inputs)
-        sigma_hist = np.asarray(self.history["sigma"], dtype=float)
-        phi_hist = np.asarray(self.history["phi"], dtype=float)
-        progress = np.asarray(self.history["progress"], dtype=float)
-        command_effort = np.asarray(self.history["command_effort"], dtype=float)
-        net_effort = np.asarray(self.history["net_effort"], dtype=float)
-        disturbance_energy = np.asarray(self.history["disturbance_energy"], dtype=float)
-        tracking_rmse = np.asarray(self.history["tracking_rmse"], dtype=float)
-        position_rmse = np.asarray(self.history["position_rmse"], dtype=float)
-        final_distance = np.asarray(self.history["final_distance"], dtype=float)
-        success = np.asarray(self.history["success"], dtype=float)
-        settling_time = np.asarray(self.history["settling_time"], dtype=float)
-        state_cost = np.asarray(self.history["state_cost"], dtype=float)
-        prediction_rmse = np.asarray(self.history["prediction_rmse"], dtype=float)
-        prediction_position_rmse = np.asarray(self.history["prediction_position_rmse"], dtype=float)
-        control_effort = np.asarray(self.history["control_effort"], dtype=float)
-        effort_ratio_hist = np.asarray(self.history["effort_ratio"], dtype=float)
-        d_hat_error = np.asarray(self.history["d_hat_error"], dtype=float)
-        d_residual_sampled = np.asarray(self.history["d_residual_sampled"], dtype=float)
-        d_residual_mean = np.asarray(self.history["d_residual_mean"], dtype=float)
+        # ---------------------------------------------
+        # pull learning history FROM DISK
+        # ---------------------------------------------
+
+        history = self.data.read(phase)
+
+        steps       = history["step"]
+        rewards     = history["reward"]
+        advantages  = history["advantage"]
+
+        prediction_errors   = history["prediction_error"]
+        terminal_errors     = history["terminal_error"]
+
+        rl_adjustment   = history["rl_adjustment"]
+        d_true          = history["d_true"]
+        d_hat           = history["d_hat"]
+        rl_mean         = history["rl_mean"]
+
+        sigma_hist      = history["sigma"]
+        phi_hist        = history["phi"]
+
+        progress        = history["progress"]
+        command_effort  = history["command_effort"]
+        net_effort      = history["net_effort"]
+        disturbance_energy = history["disturbance_energy"]
+
+        tracking_rmse   = history["tracking_rmse"]
+        position_rmse   = history["position_rmse"]
+        final_distance  = history["final_distance"]
+        success         = history["success"]
+        settling_time   = history["settling_time"]
+        state_cost      = history["state_cost"]
+
+        prediction_rmse             = history["prediction_rmse"]
+        prediction_position_rmse    = history["prediction_position_rmse"]
+
+        control_effort              = history["control_effort"]
+        effort_ratio_hist           = history["effort_ratio"]
+
+        d_hat_error             = history["d_hat_error"]
+        d_residual_sampled      = history["d_residual_sampled"]
+        d_residual_mean         = history["d_residual_mean"]
 
         # reward and advantage history
         # ----------------------------
@@ -1253,6 +1293,260 @@ class HorizonManager():
             plt.close(fig)
 
         print(f"CALA plots saved to: {folder}")
+
+    # load a learned policy (default: -1 as the last trial)
+    def load_policy(self, phase="learning", trial=-1):
+
+        if self.data is None:
+            raise RuntimeError("Cannot load CALA policy: no dataset found.")
+
+        history = self.data.read(phase)
+
+        if "mu" not in history:
+            raise KeyError("No learned parameter means stored in CALA dataset.")
+
+        # load learned policy
+        self.cala.mu = np.asarray(history["mu"][trial], dtype=float).copy()
+
+        # sigma, if needed later 
+        if "sigma" in history:
+            self.cala.sigma = np.asarray(history["sigma"][trial],dtype=float).copy()
+
+        print(f"Loaded CALA policy from {self.data.filepath}, trial {trial}")
+
+        return self.cala.mu
+
+
+
+# ---------------------------------
+# A custom CALA dataset
+# ---------------------------------
+
+class CALADataset:
+
+    def __init__(self, filepath="data/cala_learning.h5", overwrite=True):
+
+        self.filepath = filepath
+
+        # remove existing learning file for a new run
+        if overwrite and os.path.exists(self.filepath):
+            os.remove(self.filepath)
+
+        # one row/sample corresponds to one completed CALA trial
+        self.columns = [
+
+            # basic learning terms
+            "step",
+            "reward",
+            "advantage",
+            "prediction_error",
+            "terminal_error",
+            "rl_adjustment",
+            "d_true",
+            "d_hat",
+            "rl_mean",
+            "mu",
+            "sigma",
+
+            # performance
+            "tracking_rmse",
+            "position_rmse",
+            "final_distance",
+            "success",
+            "settling_steps",
+            "settling_time",
+            "state_cost",
+
+            # prediction
+            "prediction_rmse",
+            "prediction_position_rmse",
+
+            # control
+            "control_effort",
+            "effort_ratio",
+
+            # disturbance rejection
+            "d_hat_error",
+            "d_residual_sampled",
+            "d_residual_mean",
+
+            # R-learning
+            "progress",
+            "command_effort",
+            "net_effort",
+            "disturbance_energy",
+            "advantage_scaled",
+
+            # feature information
+            "phi",
+        ]
+
+        self.phase = "learning"
+
+        # staging area
+        for col in self.columns:
+            setattr(self, col, [])
+
+    # -------------------------------------------------
+    # stage one or more completed CALA trial results
+    # -------------------------------------------------
+
+    def stage(self, phase="learning", **kwargs):
+
+        self.phase = phase
+
+        for key, value in kwargs.items():
+
+            if key not in self.columns:
+                raise KeyError(f"Unknown CALA data column: {key}")
+
+            if value is not None:
+                getattr(self, key).append(np.asarray(value).copy())
+
+    # -------------------------------------------------
+    # write staged data to HDF5
+    # -------------------------------------------------
+
+    def store(self, flush_after=True):
+
+        folder = os.path.dirname(self.filepath)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+
+        with h5py.File(self.filepath, "a") as f:
+
+            if self.phase not in f:
+                group = f.create_group(self.phase)
+            else:
+                group = f[self.phase]
+
+            for key in self.columns:
+
+                staged = getattr(self, key)
+
+                if len(staged) == 0:
+                    continue
+
+                data = self._make_batch(staged)
+
+                if key not in group:
+
+                    group.create_dataset(
+                        key,
+                        data=data,
+                        maxshape=(None,) + data.shape[1:],
+                        chunks=True,
+                    )
+
+                else:
+
+                    dataset = group[key]
+
+                    # protect against shape changes during a run
+                    if dataset.shape[1:] != data.shape[1:]:
+                        raise ValueError(
+                            f"CALA dataset shape mismatch for '{key}': "
+                            f"stored {dataset.shape[1:]}, new {data.shape[1:]}"
+                        )
+
+                    old_len = dataset.shape[0]
+                    new_len = old_len + data.shape[0]
+
+                    dataset.resize(new_len, axis=0)
+                    dataset[old_len:new_len] = data
+
+        if flush_after:
+            self.clear()
+
+
+    # -------------------------------------------------
+    # read complete learning phase or individual column
+    # -------------------------------------------------
+
+    def read(self, phase="learning", key=None):
+
+        with h5py.File(self.filepath, "r") as f:
+
+            if phase not in f:
+                raise KeyError(
+                    f"CALA phase '{phase}' not found in {self.filepath}"
+                )
+
+            group = f[phase]
+
+            if key is not None:
+
+                if key not in group:
+                    raise KeyError(
+                        f"CALA column '{key}' not found in phase '{phase}'"
+                    )
+
+                return group[key][:]
+
+            return {
+                name: group[name][:]
+                for name in group.keys()
+            }
+
+
+    # -------------------------------------------------
+    # clear staging area
+    # -------------------------------------------------
+
+    def clear(self):
+
+        for col in self.columns:
+            setattr(self, col, [])
+
+
+    # -------------------------------------------------
+    # number of stored trials
+    # -------------------------------------------------
+
+    def __len__(self):
+
+        if not os.path.exists(self.filepath):
+            return 0
+
+        with h5py.File(self.filepath, "r") as f:
+
+            if self.phase not in f:
+                return 0
+
+            group = f[self.phase]
+
+            if "reward" not in group:
+                return 0
+
+            return group["reward"].shape[0]
+
+
+    # -------------------------------------------------
+    # convert staged samples to HDF5 batch
+    # -------------------------------------------------
+
+    def _make_batch(self, staged):
+
+        arrays = [np.asarray(item) for item in staged]
+
+        # every staged item represents ONE completed trial
+        #
+        # scalar:
+        #     () -> (N,)
+        #
+        # vector:
+        #     (nu,) -> (N, nu)
+        #
+        # matrix:
+        #     (n_features, nu)
+        #       -> (N, n_features, nu)
+
+        if arrays[0].ndim == 0:
+            return np.asarray(
+                [item.item() for item in arrays]
+            )
+
+        return np.stack(arrays, axis=0)
 
 
 #-----------

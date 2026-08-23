@@ -16,10 +16,11 @@ import cala
 # Pipeline Setup
 # ------------------------------------------------------------------ 
 pipeline = {
-    'model':    False,
-    'control':  True,
-    'rl':       True,
-    'visuals':  True
+    'model':        False,
+    'control':      True,
+    'rl_train':     True,
+    'rl_evaluate':  True,
+    'visuals':      True
 }
 # ------------------------------------------------------------------
 # Initialize plant and data
@@ -102,15 +103,15 @@ xr      = target.evolve(t)
 # ------------------------------------------------------------------
 if pipeline['control']:
 
-   
     # initialize the MPC controller and load params f
     controller = mpc.MPC(x - xr)  # controller uses reference frame with xr at center 
 
     # ------------------------------------------------------------------
     # Initialize RL for disturbances   
     # ------------------------------------------------------------------
-    if pipeline['rl']:
-        cala_horizon_manager = cala.cala_suite(controller)
+    if pipeline['rl_train']:
+        #cala_horizon_manager = cala.cala_suite(controller)
+        cala_horizon_manager = cala.cala_suite(controller, filepath="data/cala/training.h5", overwrite=True)
     rl_adjustment = np.zeros(controller.nu)
 
     if controller.use_learned_model:
@@ -135,7 +136,7 @@ if pipeline['control']:
 
 
         # begin cala trial
-        if pipeline['rl']:
+        if pipeline['rl_train']:
             rl_adjustment = cala.pre_controller(cala_horizon_manager, x, t, x_error = x - xr)
             cala_horizon_manager.d_true = d.copy()
         else:
@@ -164,7 +165,7 @@ if pipeline['control']:
         xr = target.evolve(t+controller.Ts)
 
         # update cala trial
-        if pipeline['rl']:
+        if pipeline['rl_train']:
             cala_horizon_manager.u_trial.append(np.asarray(u).reshape(-1).copy())
             cala_horizon_manager.d_hat_trial.append(np.asarray(controller.d_hat).reshape(-1).copy())
             predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
@@ -195,6 +196,149 @@ else:
 
     data_defaults = Dataset(filepath=cfg_dat["defaults"], overwrite=False)
     controller_data         = data_defaults.read('controller')
+
+
+# ------------------------------------------------------
+# Compare rl-learned R with benchmark R
+# -------------------------------------------------------
+if pipeline['rl_evaluate']:
+
+    # --------------------------------------------------
+    # evaluation configuration
+    # --------------------------------------------------
+
+    cala_eval_Tf    = 200.0
+    t_eval          = t
+
+    eval_data = Dataset(filepath="data/cala/evaluation.h5",overwrite=True)
+
+    # --------------------------------------------------
+    # create identical starting conditions
+    # --------------------------------------------------
+
+    plant_learned   = le_plant.Plant()
+    plant_benchmark = le_plant.Plant()
+
+    x_learned       = plant_learned.x0.copy()
+    x_benchmark     = plant_benchmark.x0.copy()
+
+    target_eval     = le_target.Target()
+    xr_eval         = target_eval.evolve(t_eval)
+
+    dist_learned = disturbance_generator.Disturbance(field=field,x=x_learned,t=t_eval)
+    dist_benchmark = disturbance_generator.Disturbance(field=field,x=x_benchmark,t=t_eval)
+
+    # --------------------------------------------------
+    # independent MPCs
+    # --------------------------------------------------
+
+    controller_learned = mpc.MPC(x_learned - xr_eval)
+    controller_benchmark = mpc.MPC(x_benchmark - xr_eval)
+
+    # apply same learned plant model used in main simulation
+    for ctrl in [controller_learned, controller_benchmark]:
+
+        if ctrl.use_learned_model:
+            ctrl.A = A_hat.copy()
+            ctrl.B = B_hat.copy()
+            ctrl.new_model_parameters = True
+
+    u_learned   = controller_learned.u0.copy().flatten()
+    u_benchmark = controller_benchmark.u0.copy().flatten()
+
+    # --------------------------------------------------
+    # load frozen CALA R-policy from training
+    # --------------------------------------------------
+
+    cala_eval = cala.cala_suite(controller_learned,filepath="data/cala/training.h5",overwrite=False)
+    cala_eval.load_policy()
+
+    # --------------------------------------------------
+    # evaluation rollout
+    # --------------------------------------------------
+
+    for k in range(int(cala_eval_Tf / controller_learned.Ts)):
+
+        # target corresponding to current instant
+        xr_eval = target_eval.evolve(t_eval)
+
+        # ----------------------------------------------
+        # actual disturbances
+        # ----------------------------------------------
+
+        d_learned = dist_learned.evolve(field=field,x=x_learned,t=t_eval)
+        d_benchmark = dist_benchmark.evolve(field=field,x=x_benchmark,t=t_eval)
+
+        # ----------------------------------------------
+        # RL-LEARNED R
+        # ----------------------------------------------
+
+        # build feature activation at current learned-R state
+        phi = cala_eval.feature_map.build_features(x_learned,t_eval)
+
+        # exploit learned mean policy -- NO exploration
+        rl_R_adjustment = cala_eval.cala.get_correction(phi)
+        controller_learned.solve(x_learned - xr_eval,u_learned,rl_adjustment=rl_R_adjustment)
+        u_learned = (controller_learned.result_control_next.flatten())
+        x_learned = plant_learned.evolve(x_learned,u_learned,d_learned,disturb=True)
+
+        # ----------------------------------------------
+        # BENCHMARK R
+        # ----------------------------------------------
+
+        controller_benchmark.solve(x_benchmark - xr_eval,u_benchmark,rl_adjustment=None)
+        u_benchmark = (controller_benchmark.result_control_next.flatten())
+        x_benchmark = plant_benchmark.evolve(x_benchmark,u_benchmark,d_benchmark,disturb=True)
+
+        # ----------------------------------------------
+        # next target / time
+        # ----------------------------------------------
+
+        t_next = t_eval + controller_learned.Ts
+        xr_next = target_eval.evolve(t_next)
+
+        # ----------------------------------------------
+        # store learned-R result
+        # ----------------------------------------------
+
+        eval_data.stage(
+            phase="rl_learned_R",
+            step=t_next,
+            A_hat=controller_learned.A,
+            B_hat=controller_learned.B,
+            d_hat=controller_learned.d_hat,
+            d=plant_learned.d,
+            target=xr_next,
+            state=x_learned,
+            input=u_learned,
+        )
+        eval_data.store(flush_after=True)
+
+        # ----------------------------------------------
+        # store benchmark result
+        # ----------------------------------------------
+
+        eval_data.stage(
+            phase="benchmark_R",
+            step=t_next,
+            A_hat=controller_benchmark.A,
+            B_hat=controller_benchmark.B,
+            d_hat=controller_benchmark.d_hat,
+            d=plant_benchmark.d,
+            target=xr_next,
+            state=x_benchmark,
+            input=u_benchmark,
+        )
+        eval_data.store(flush_after=True)
+
+        t_eval = t_next
+        t += controller.Ts
+
+    # pull back from disk
+    learned_R_data = eval_data.read("rl_learned_R")
+    benchmark_R_data = eval_data.read("benchmark_R")
+
+
 
 # ------------------------------------------------------------------
 # Visualizations
@@ -235,16 +379,19 @@ if pipeline['visuals']:
     plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
     plot.plot_trajectory(controller_data['step'],controller_data['state'],x_target=controller_data['target'],filename='visualization/plots/trajectory.png')
-
-    # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
-    if pipeline['rl']:
-        cala_horizon_manager.plot_learning()
-        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200)
+    if pipeline['rl_train']:
+        cala_horizon_manager.plot_learning(folder="visualization/cala")
+        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200, folder = 'visualization/cala/')
+    if pipeline['rl_evaluate']:
+        eval_data = Dataset(filepath="data/cala/evaluation.h5",overwrite=False)
+        learned_R_data = eval_data.read("rl_learned_R")
+        benchmark_R_data = eval_data.read("benchmark_R")
+        plot.plot_R_evaluation(learned_R_data,benchmark_R_data,filename="visualization/cala/R_evaluation.png")
+        plot.plot_R_evaluation_mixed(learned_R_data,benchmark_R_data,R0=None,filename="visualization/cala/R_evaluation_mixed.png")
 
     # old (keep for now)
     #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
     
-
     print('Producing animation...')
 
     if show_field and disturbor.dist_type == 'field':

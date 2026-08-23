@@ -1,7 +1,7 @@
 {
     "initial_state": [0.0, 0.0, 0.0, 0.0],
     "dynamics": "wander",
-    "period": 25,
+    "period": 35,
     "random_seed": 42,
     "wander_params": 
     {
