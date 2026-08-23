@@ -15,13 +15,13 @@ def cala_suite(controller):
 
     return horizon_manager
 
-def pre_controller(horizon_manager, x, t):
+def pre_controller(horizon_manager, x, t, x_error = None):
 
     if not horizon_manager.enable:
         return np.zeros(horizon_manager.n_inputs)
 
     if not horizon_manager.active:
-        rl_adjustment = horizon_manager.begin_trial(x, t, explore=True)
+        rl_adjustment = horizon_manager.begin_trial(x, t, x_error=x_error, explore=True)
     else:
         rl_adjustment = horizon_manager.rl_adjustment.copy()
 
@@ -347,8 +347,8 @@ class CALA_NLD():
         # reward updates 
         self.reward_mean = None         # will take value of first reward signal (i.e., not zeros)
         self.phi = None                 # stores activations
-
-
+        self.reward_scale = None
+        self.last_advantage_scaled = 0.0
 
     # sample an action from the distributions (exploit or explore)
     def _sample(self, explore = True):
@@ -406,12 +406,26 @@ class CALA_NLD():
 
         # update reward mean (uses low pass filter, reward_mean = (1-B)reward_mean + B*reward)
 
+        # REWARD
         reward_error = reward - self.reward_mean
-        advantage = reward_error / (abs(self.reward_mean) + 1e-8)
         self.reward_mean += self.reward_rate * reward_error
 
+        # ADVANTAGE
+        abs_error = abs(reward_error)
+        if self.reward_scale is None:
+            self.reward_scale = max(abs_error, 1e-3)
+        else:
+            self.reward_scale += (self.reward_rate * (abs_error- self.reward_scale))
+        advantage = (reward_error/max(self.reward_scale, 1e-3))
+        advantage_scaled = np.tanh(self.advantage_gain* advantage)
+        self.last_advantage_scaled = float(advantage_scaled)
+
+
+        #advantage = reward_error / (abs(self.reward_mean) + 1e-8)
+
+
         # bound/scale the advantage for cleaner updates
-        advantage_scaled  = np.tanh(self.advantage_gain * advantage)
+        #advantage_scaled  = np.tanh(self.advantage_gain * advantage)
 
         # for each feature
         for i in range(self.n_features):
@@ -449,7 +463,7 @@ class CALA_NLD():
         self.sigma  = np.clip(self.sigma, self.sigma_min, self.sigma_max)
 
         # return
-        return advantage
+        return advantage_scaled
 
     # returns rl_adjustment, based on current distro
     def get_correction(self, phi):
@@ -553,7 +567,8 @@ class HorizonManager():
         self.n_states           = int(mpc.nx)
         self.n_inputs           = int(mpc.nu)
         #self.h                  = int(mpc.h)
-        self.h                  = int(mpc.replan_trigger)
+        #self.h                  = int(mpc.replan_trigger)
+        self.prediction_h       = int(mpc.h)
         self.replan_trigger     = int(mpc.replan_trigger) 
         self.state_weights      = np.diag(mpc.Q) 
         #self.effort_weights     = np.diag(mpc.R)
@@ -570,11 +585,12 @@ class HorizonManager():
 
         #self.reward_period = self.replan_trigger 
         self.reward_period = cfg_hm["reward_period"]
+        '''
         if self.reward_period > 1:
            raise ValueError(f"reward_period must be set to 1 (for now)")
         if mpc.replan_mode != 'receding_horizon':
            raise ValueError(f"mpc must be set to receding horizon control (for now)")
-   
+        '''
 
         #if self.reward_mode == 'prediction' and mpc.replan_mode == 'receding_horizon':
         #    raise ValueError(f"Cannot use prediction-error based RL reward when MPC replan_mode is receding horizon. Select horizon (h) or control (m) horizon.")
@@ -597,8 +613,23 @@ class HorizonManager():
         self.d_hat = np.zeros(self.n_inputs) # the linear assumption
         self.start_time = None
 
+        # r-learning params
+        self.r_lambda_effort = cfg_hm["r_lambda_effort"]
+        self.r_disturbance_gain = cfg_hm["r_disturbance_gain"]
+        self.r_progress_floor = cfg_hm["r_progress_floor"]
+        self.u_trial = []
+        self.d_hat_trial = []
+        self.progress = 0.0
+        self.command_effort = 0.0
+        self.net_effort = 0.0
+        self.disturbance_energy = 0.0
+
+
+
         # storage
         self.history = {
+
+            # basic
             "step": [],
             "reward": [],
             "advantage": [],
@@ -610,10 +641,18 @@ class HorizonManager():
             "rl_mean": [],
             "mu": [],
             "sigma": [],
-        }
+
+            # r- learning terms
+            "progress": [],
+            "command_effort": [],
+            "net_effort": [],
+            "disturbance_energy": [],
+            "advantage_scaled": [],
+            "phi": []
+            }
 
 
-    def begin_trial(self, x, t, explore = True):
+    def begin_trial(self, x, t, x_error = None, explore = True):
 
         # build feature map for this time/space
         phi = self.feature_map.build_features(x, t)
@@ -631,6 +670,15 @@ class HorizonManager():
         self.actual = []
         self.rl_mean = rl_mean.copy()
         self.rl_adjustment = rl_adjustment.copy()
+
+        if x_error is not None:
+            self.x_start = np.asarray(x_error).reshape(-1).copy()
+        else:
+            self.x_start = None 
+
+        self.u_trial = []
+        self.d_hat_trial = []
+
         self.start_time = float(t)
 
         return self.rl_adjustment
@@ -640,7 +688,11 @@ class HorizonManager():
         #prediction= np.asarray(prediction, dtype=float)
         #self.predicted = prediction.reshape(self.h, self.n_states).copy()
         prediction = np.asarray(prediction, dtype=float).reshape(-1, self.n_states)
-        self.predicted = prediction[:self.h, :].copy()
+
+        n_keep = min(self.reward_period,self.prediction_h,prediction.shape[0])
+
+        #self.predicted = prediction[:self.h, :].copy()
+        self.predicted = prediction[:n_keep,:].copy()
 
     def _update_actual(self, x_new):
 
@@ -669,33 +721,50 @@ class HorizonManager():
         self.history["mu"].append(self.cala.mu.copy())
         self.history["sigma"].append(self.cala.sigma.copy())
 
+        # R-learning
+        self.history["progress"].append(float(self.progress))
+        self.history["command_effort"].append(float(self.command_effort))
+        self.history["net_effort"].append(float(self.net_effort))
+        self.history["disturbance_energy"].append(float(self.disturbance_energy))
+        self.history["advantage_scaled"].append(self.cala.last_advantage_scaled)
+        self.history["phi"].append(self.cala.phi.copy())
+
         self.active = False
 
         return reward, prediction_error, terminal_error, advantage
 
     def _compute_reward(self):
 
-        # actual = np.asarray(self.actual, dtype=float)
-        # predicted = np.asarray(self.predicted, dtype=float)
+   
+        actual_all = np.asarray(self.actual,dtype=float).reshape(-1, self.n_states)
+        predicted_all = np.asarray(self.predicted,dtype=float).reshape(-1, self.n_states)
+        n = min(actual_all.shape[0],predicted_all.shape[0])
+        actual_pred = actual_all[:n, :]
+        predicted = predicted_all[:n, :]
+        error = actual_pred - predicted
 
-        # tighter
-        actual = np.asarray(self.actual, dtype=float).reshape(-1, self.n_states)
-        predicted = np.asarray(self.predicted,dtype=float).reshape(-1, self.n_states)
-        # number of valid state comparisons in this trial
-        n = min(actual.shape[0], predicted.shape[0])
-        if n == 0:
-            raise RuntimeError("Cannot compute reward: no actual/predicted states available.")
-        actual = actual[:n, :]
-        predicted = predicted[:n, :]
-
-
-        error = actual - predicted
         discounts = self.discount ** np.arange(n)
+        weighted_error = (self.state_weights.reshape(1, self.n_states)* error**2)
+        step_error = np.sum(weighted_error,axis=1)
+        prediction_error = float(np.sum(discounts * step_error)/(np.sum(discounts) + 1e-12))
+        terminal_error = float(np.sum(error[-1]**2* self.terminal_weights))
 
-        weighted_error = self.state_weights.reshape(1, self.n_states) * error**2
-        step_error = np.sum(weighted_error, axis=1)
-        prediction_error = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12))
-        terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
+
+        ## this worked well with d-learning:
+        # actual = np.asarray(self.actual, dtype=float).reshape(-1, self.n_states)
+        # predicted = np.asarray(self.predicted,dtype=float).reshape(-1, self.n_states)
+        # # number of valid state comparisons in this trial
+        # n = min(actual.shape[0], predicted.shape[0])
+        # if n == 0:
+        #     raise RuntimeError("Cannot compute reward: no actual/predicted states available.")
+        # actual = actual[:n, :]
+        # predicted = predicted[:n, :]
+        # error = actual - predicted
+        # discounts = self.discount ** np.arange(n)
+        # weighted_error = self.state_weights.reshape(1, self.n_states) * error**2
+        # step_error = np.sum(weighted_error, axis=1)
+        # prediction_error = float(np.sum(discounts * step_error)/ (np.sum(discounts) + 1e-12))
+        # terminal_error = float(np.sum(error[-1]**2 * self.terminal_weights))
 
         if self.reward_mode == "prediction":
 
@@ -715,61 +784,79 @@ class HorizonManager():
 
         elif self.reward_mode == 'for_r':
 
-            pass
-            cost = 0
-
-            # --------------------------------------------------------------
+            # ----------------------------------------------------------
             # R-learning reward
+            #   reward = progress - lambda * disturbance-normalized control effort  
+            # where
             #
-            # Goal:
-            #   1. reward progress toward target
-            #   2. penalize excessive net control action
-            #   3. mildly penalize actual commanded control effort
+            # progress = V_start - V_end
+            # command_effort = ||u||^2
+            # net_effort = ||u||^2 /(1 + beta * ||d_hat||^2)
             #
-            # Since:
-            #
-            #       x+ = A x + B (u + d)
-            #
-            # and d_hat ~= d_true, then:
-            #
-            #       u + d_hat
-            #
-            # approximates the nominal control action seen by the plant after
-            # disturbance compensation.
-            # --------------------------------------------------------------
+            # ----------------------------------------------------------
 
-            '''
-            x_start = np.asarray(self.x_start, dtype=float).reshape(-1)
-            x_end   = np.asarray(actual[-1], dtype=float).reshape(-1)
+            # ----------------------------------------------------------
+            # 1. Tracking progress: +ve = got better, -ve = got worse
+            # ----------------------------------------------------------
 
-            u       = np.asarray(self.u_applied, dtype=float).reshape(-1)
-            d_hat   = np.asarray(self.d_hat, dtype=float).reshape(-1)
+            x_start = np.asarray(self.x_start).reshape(-1)
+            x_end = np.asarray(actual_all[-1],dtype=float).reshape(-1)
+            V_start = float(np.sum(self.state_weights* x_start**2))
+            V_end = float(np.sum(self.state_weights* x_end**2))
 
-            # state cost before and after this CALA trial
-            V_start = float(np.sum(self.state_weights * x_start**2))
-            V_end   = float(np.sum(self.state_weights * x_end**2))
 
-            # positive if state improved
-            progress = V_start - V_end
+            progress_denominator = max(V_start, self.r_progress_floor)
+            #self.progress = (V_start - V_end)
+            #self.progress = ((V_start - V_end)/progress_denominator)
 
-            # effective nominal plant input after disturbance cancellation
-            u_net = u + d_hat
+            self.progress = float(np.log((V_start + self.r_progress_floor)/(V_end + self.r_progress_floor)))
 
-            # fixed evaluation costs -- do NOT use the CALA-adjusted R here
-            net_effort     = float(np.dot(u_net, u_net))
-            command_effort = float(np.dot(u, u))
 
-            # reward weights
-            lambda_net = 0.01
-            lambda_u   = 0.001
+            # ----------------------------------------------------------
+            # 2. Control/disturbance histories
+            # ----------------------------------------------------------
 
-            # convert to cost because reward = -cost below
-            cost = (
-                -progress
-                + lambda_net * net_effort
-                + lambda_u * command_effort
-            )
-            '''
+            u_trial = np.asarray(self.u_trial).reshape(-1, self.n_inputs)
+            d_hat_trial = np.asarray(self.d_hat_trial).reshape(-1, self.n_inputs)
+
+            # make sure same lengths and pull
+            n_effort = min(u_trial.shape[0], d_hat_trial.shape[0])
+            u_trial = u_trial[:n_effort]
+            d_hat_trial = d_hat_trial[:n_effort]
+
+            # ----------------------------------------------------------
+            # 3. Raw command effort
+            # ----------------------------------------------------------
+
+            command_effort_step = np.sum(u_trial**2, axis=1)
+
+            # ----------------------------------------------------------
+            # 4. Estimated disturbance energy
+            # ----------------------------------------------------------
+
+            disturbance_energy_step = np.sum(d_hat_trial**2, axis=1)
+
+            # ----------------------------------------------------------
+            # 5. Disturbance-normalized effort: big = encourages more control
+            # ----------------------------------------------------------
+
+            net_effort_step = (command_effort_step/(1.0+ self.r_disturbance_gain * disturbance_energy_step))
+
+            # ----------------------------------------------------------
+            # 6. Average over trial
+            # ----------------------------------------------------------
+
+            effort_discounts        = (self.discount** np.arange(n_effort))
+            effort_norm             = (np.sum(effort_discounts)+ 1e-12)
+            self.command_effort     = float(np.sum(effort_discounts* command_effort_step)/ effort_norm)
+            self.disturbance_energy = float(np.sum(effort_discounts * disturbance_energy_step)/ effort_norm)
+            self.net_effort         = float(np.sum(effort_discounts* net_effort_step) / effort_norm)
+
+            # ----------------------------------------------------------
+            # 7. Final R-learning cost
+            # ----------------------------------------------------------
+
+            cost = (-self.progress + self.r_lambda_effort * self.net_effort)
 
         else:
 
@@ -818,15 +905,6 @@ class HorizonManager():
         d_true = np.asarray(self.history["d_true"], dtype=float).reshape(-1, self.n_inputs)
         d_hat  = np.asarray(self.history["d_hat"],  dtype=float).reshape(-1, self.n_inputs)
         rl_mean = np.asarray(self.history["rl_mean"], dtype=float).reshape(-1, self.n_inputs)
-
-        # linear disturbance rejection error
-        error_linear = (d_true - d_hat)**2
-        # learned CALA mean added to linear rejection
-        error_combinerl_mean = (d_true - d_hat - rl_mean)**2
-        # actual sampled CALA correction used during training
-        #error_combined_sample = d_true - d_hat - rl_adjustment
-
-
         sigma = np.asarray(self.history["sigma"])
 
         # reward and advantage history
@@ -856,11 +934,11 @@ class HorizonManager():
         # correction history
         fig, ax = plt.subplots(figsize=(9, 6))
         for j in range(self.n_inputs):
-            ax.plot(steps, rl_adjustment[:, j], marker="o", label=f"$d_{{cala,{j}}}$")
+            ax.plot(steps, rl_adjustment[:, j], marker="o", label=f"$rl_{{cala,{j}}}$")
         ax.axhline(0.0, linestyle="--")
         ax.set_title("CALA correction history")
         ax.set_xlabel("Trial start time")
-        ax.set_ylabel("Disturbance correction")
+        ax.set_ylabel("Correction")
         ax.grid(True)
         ax.legend()
         fig.savefig(f"{folder}/correction_history.png", dpi=200, bbox_inches="tight")
@@ -885,8 +963,8 @@ class HorizonManager():
             #ax.plot(rl_adjustment[:, 0], rl_adjustment[:, 1], linestyle="--", alpha=0.5)
             ax.scatter(rl_adjustment[-1, 0], rl_adjustment[-1, 1], marker="x", s=100, label="Latest trial")
             ax.set_title("Empirical reward over CALA corrections")
-            ax.set_xlabel("$d_{cala,0}$")
-            ax.set_ylabel("$d_{cala,1}$")
+            ax.set_xlabel("$rl_{0}$")
+            ax.set_ylabel("$rl_{1}$")
             ax.set_xlim(-self.cala.d_max, self.cala.d_max)
             ax.set_ylim(-self.cala.d_max, self.cala.d_max)
             ax.set_aspect("equal")
@@ -906,7 +984,7 @@ class HorizonManager():
         fig.savefig(f"{folder}/exploration_history.png", dpi=200, bbox_inches="tight")
         plt.close(fig)
 
-        print(f"CALA plots saved to: {folder}")
+
 
         # compare d's 
         #d_target = d_true / (1.0 + self.compensation_weight)
@@ -919,15 +997,6 @@ class HorizonManager():
         if self.n_inputs == 1:
             axes = [axes]
         for j, ax in enumerate(axes):
-
-            # # actual learned / sampled CALA correction
-            # ax.plot(
-            #     steps,
-            #     rl_adjustment[:, j],
-            #     marker="o",
-            #     markersize=3,
-            #     label=f"$d_{{cala,{j}}}$"
-            # )
 
             # linear-assumed disturbance
             ax.plot(
@@ -944,28 +1013,12 @@ class HorizonManager():
                 linestyle=":",
                 label=f"$d_{{true,{j}}}$"
             )
-            # theoretically optimal compensation
-            ax.plot(
-                steps,
-                rl_mean[:, j],
-                linestyle="--",
-                label=f"$d_{{mean,{j}}}$"
-            )
-
-            # # linear-assumed disturbance
+            # rl param
             # ax.plot(
             #     steps,
-            #     error_linear[:, j],
-            #     linestyle="-",
-            #     label=f"just dhat"
-            # )
-
-            # # true disturbance
-            # ax.plot(
-            #     steps,
-            #     error_combined_mean[:,j],
-            #     linestyle=":",
-            #     label=f"combined"
+            #     rl_mean[:, j],
+            #     linestyle="--",
+            #     label=f"$rl_{{mean,{j}}}$"
             # )
 
             #ax.axhline(0.0, linestyle="--", linewidth=1)
@@ -984,8 +1037,277 @@ class HorizonManager():
         )
         plt.close(fig)
 
+        # R-learning plots 
+        # ================
+        
+        progress = np.asarray(self.history["progress"],dtype=float)
+        command_effort = np.asarray(self.history["command_effort"], dtype=float)
+        net_effort = np.asarray(self.history["net_effort"],dtype=float)
+        disturbance_energy = np.asarray(self.history["disturbance_energy"],dtype=float)
+        effort_ratio = (net_effort/(command_effort + 1e-12))
+        print(f"mean effort penalty ratio: "f"{np.mean(effort_ratio):.3f}")
+
+        fig, axes = plt.subplots(
+            4,
+            1,
+            figsize=(9, 10),
+            sharex=True
+        )
+
+        # progress
+        axes[0].plot(
+            steps,
+            progress
+        )
+
+        axes[0].axhline(
+            0.0,
+            linestyle='--',
+            linewidth=1
+        )
+
+        axes[0].set_ylabel("Progress")
+        axes[0].grid(True)
+
+        # raw commanded effort
+        axes[1].plot(
+            steps,
+            command_effort
+        )
+
+        axes[1].set_ylabel(
+            r"$||u||^2$"
+        )
+
+        axes[1].grid(True)
 
 
+        # estimated disturbance energy
+        axes[2].plot(
+            steps,
+            disturbance_energy
+        )
+
+        axes[2].set_ylabel(
+            r"$||\hat{d}||^2$"
+        )
+
+        axes[2].grid(True)
+
+
+        # disturbance-normalized effort
+        axes[3].plot(
+            steps,
+            net_effort
+        )
+
+        axes[3].set_ylabel(
+            "Normalized effort"
+        )
+
+        axes[3].set_xlabel(
+            "Trial start time"
+        )
+
+        axes[3].grid(True)
+
+
+        fig.suptitle(
+            "R-learning Reward Components"
+        )
+
+        fig.tight_layout()
+
+        fig.savefig(
+            f"{folder}/r_reward_components.png",
+            dpi=200,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+
+        # Plottimg r mean
+        # ==============================================================
+        # NEW:
+        # Plot the learned mean policy separately from sampled exploration
+        # ==============================================================
+
+        fig, ax = plt.subplots(figsize=(9, 6))
+
+        r_scale_mean = np.exp(rl_mean)
+
+
+        for j in range(self.n_inputs):
+
+            ax.plot(
+                steps,
+                r_scale_mean[:, j],
+                linewidth=2,
+                label=f"$R_{j}/R_{0,j}$"
+            )
+
+        ax.axhline(
+            1.0,
+            linestyle="--",
+            linewidth=1
+        )
+
+        ax.set_title("Learned MPC R scaling")
+        ax.set_xlabel("Trial start time")
+        ax.set_ylabel("$R/R_0$")
+        ax.grid(True)
+        ax.legend()
+
+        fig.savefig(
+            f"{folder}/r_mean_history.png",
+            dpi=200,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+
+        # ==============================================================
+        # CALA EXPLORATION LEVEL
+        #
+        # Plot both:
+        #   1. global mean sigma across all features
+        #   2. feature-weighted sigma for the currently active policy
+        #
+        # The active sigma is more representative of the uncertainty
+        # affecting the controller at each operating point.
+        # ==============================================================
+
+        sigma_hist = np.asarray(
+            self.history["sigma"],
+            dtype=float
+        )
+
+        phi_hist = np.asarray(
+            self.history["phi"],
+            dtype=float
+        )
+
+        # sigma_hist:
+        #     (n_trials, n_features, n_inputs)
+        #
+        # phi_hist:
+        #     (n_trials, n_features)
+
+        # --------------------------------------------------------------
+        # Global mean exploration
+        # --------------------------------------------------------------
+
+        sigma_mean = np.mean(
+            sigma_hist,
+            axis=(1, 2)
+        )
+
+        # --------------------------------------------------------------
+        # Active-feature exploration
+        #
+        # First average sigma over the control-input dimensions:
+        #
+        #     (trial, feature, input)
+        #             ->
+        #     (trial, feature)
+        # --------------------------------------------------------------
+
+        sigma_feature = np.mean(
+            sigma_hist,
+            axis=2
+        )
+
+        # Weight feature uncertainty by the feature activation that was
+        # actually present during that trial.
+        #
+        # Since phi is normalized, this gives a weighted mean sigma.
+        sigma_active = np.sum(
+            phi_hist * sigma_feature,
+            axis=1
+        )
+
+        # --------------------------------------------------------------
+        # Plot
+        # --------------------------------------------------------------
+
+        fig, ax = plt.subplots(
+            figsize=(9, 6)
+        )
+
+        ax.plot(
+            steps,
+            sigma_active,
+            linewidth=2,
+            label="Active-feature sigma"
+        )
+
+        ax.plot(
+            steps,
+            sigma_mean,
+            linewidth=1.5,
+            alpha=0.6,
+            label="Global mean sigma"
+        )
+
+        ax.set_title(
+            "CALA exploration level"
+        )
+
+        ax.set_xlabel(
+            "Trial start time"
+        )
+
+        ax.set_ylabel(
+            "Sigma"
+        )
+
+        ax.grid(True)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(
+            f"{folder}/cala_exploration_level.png",
+            dpi=200,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+        # sigma histories
+
+        if len(sigma_hist) == 0:
+            print("No sigma history available.")
+            return
+
+        sigma_feat = sigma_hist.mean(axis=2)                       # (T, F)
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+        im = ax.imshow(
+            sigma_feat.T,
+            aspect="auto",
+            origin="lower",
+            interpolation="nearest"
+        )
+
+        ax.set_title("CALA feature sigma heatmap")
+        ax.set_xlabel("Trial start time")
+        ax.set_ylabel("Feature index")
+
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label("Sigma")
+        fig.tight_layout()
+        fig.savefig(
+            f"{folder}/all_sigmas.png",
+            dpi=200,
+            bbox_inches="tight"
+        )
+        plt.close(fig)
+
+
+
+
+        print(f"CALA plots saved to: {folder}")
 
 #-----------
 # testing     

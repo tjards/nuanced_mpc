@@ -136,7 +136,7 @@ if pipeline['control']:
 
         # begin cala trial
         if pipeline['rl']:
-            rl_adjustment = cala.pre_controller(cala_horizon_manager, x, t)
+            rl_adjustment = cala.pre_controller(cala_horizon_manager, x, t, x_error = x - xr)
             cala_horizon_manager.d_true = d.copy()
         else:
             rl_adjustment = None
@@ -165,6 +165,8 @@ if pipeline['control']:
 
         # update cala trial
         if pipeline['rl']:
+            cala_horizon_manager.u_trial.append(np.asarray(u).reshape(-1).copy())
+            cala_horizon_manager.d_hat_trial.append(np.asarray(controller.d_hat).reshape(-1).copy())
             predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
             cala_horizon_manager.d_hat = controller.d_hat.copy()
             cala.post_controller(cala_horizon_manager, predicted_reference, x, xr)
@@ -240,7 +242,7 @@ if pipeline['visuals']:
     # temp: this data will need to be stored before plotting (i.e., don't plot from memory)
     if pipeline['rl']:
         cala_horizon_manager.plot_learning()
-    #    cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200)
+        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200)
     #     cala_horizon_manager.cala.plot_correction(t=5.0, resolution=100)
     #     cala_horizon_manager.cala.plot_correction(t=10.0, resolution=100)
     #     cala_horizon_manager.cala.plot_correction(t=15.0, resolution=100)

@@ -1,5 +1,5 @@
 {
-    "Tf": 200,
+    "Tf": 500,
     "Ts": 0.1,
     "A": [
         [1, 0, 0.1, 0],
@@ -14,14 +14,14 @@
         [0, 0.1]
     ],
     "Q_diag": [1, 1, 0.1, 0.1],
-    "R_diag": [0.01, 0.01],
+    "R_diag": [1, 1],
     "P_diag": "dare",
     "u0": [0, 0],
     "h": 10,
     "m": 5,
     "disturbance": true,
-    "disturbance_enable_linear_rejection": false,
-    "rl_parameter": "d", 
+    "disturbance_enable_linear_rejection": true,
+    "rl_parameter": "R", 
     "constraints": {
         "type": "box",
         "x_min": [-5, -5, -5, -5],
