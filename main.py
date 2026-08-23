@@ -11,6 +11,7 @@ import mpc
 import visualization.plot as plot
 from data_manager import Dataset
 import cala
+import os
 
 # ------------------------------------------------------------------
 # Pipeline Setup
@@ -352,8 +353,17 @@ if pipeline['visuals']:
     animate_path            = cfg_viz['animate_path']
     plot_inputs_path        = cfg_viz['plot_inputs_path']
     plot_velocities_path    = cfg_viz['plot_velocities_path']
+    plot_trajectory_path    = cfg_viz['plot_trajectory_path']
     keep_modelling_history  = cfg_viz['keep_modelling_history']
     show_field              = cfg_viz['show_field']
+    training_folder         = cfg_viz['training_folder']
+    evaluation_folder       = cfg_viz['evaluation_folder']
+    control_folder          = cfg_viz['control_folder']
+    os.makedirs(training_folder, exist_ok=True)
+    os.makedirs(evaluation_folder, exist_ok=True)
+    os.makedirs(control_folder, exist_ok=True)
+
+
 
     with open('configs/config_mpc.json') as f:
         cfg_mpc = json.load(f)
@@ -378,17 +388,20 @@ if pipeline['visuals']:
     print('Producing plots...')
     plot.plot_inputs(time_history, full_input_history, constraints, filename=plot_inputs_path)
     plot.plot_velocities(time_history, full_state_history, constraints, filename=plot_velocities_path)
-    plot.plot_trajectory(controller_data['step'],controller_data['state'],x_target=controller_data['target'],filename='visualization/plots/trajectory.png')
+    plot.plot_trajectory(controller_data['step'],controller_data['state'],x_target=controller_data['target'],filename=plot_trajectory_path)
     if pipeline['rl_train']:
-        cala_horizon_manager.plot_learning(folder="visualization/cala")
-        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200, folder = 'visualization/cala/')
+        cala_horizon_manager.plot_learning(folder=training_folder)
+        cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200, folder = training_folder)
     if pipeline['rl_evaluate']:
         eval_data = Dataset(filepath="data/cala/evaluation.h5",overwrite=False)
         learned_R_data = eval_data.read("rl_learned_R")
         benchmark_R_data = eval_data.read("benchmark_R")
-        plot.plot_R_evaluation(learned_R_data,benchmark_R_data,filename="visualization/cala/R_evaluation.png")
-        plot.plot_R_evaluation_mixed(learned_R_data,benchmark_R_data,R0=None,filename="visualization/cala/R_evaluation_mixed.png")
-
+        plot.plot_R_evaluation(learned_R_data,benchmark_R_data,filename=os.path.join(evaluation_folder, "R_evaluation.png"))
+        plot.plot_R_evaluation_cum(learned_R_data,benchmark_R_data,R0=None,filename=os.path.join(evaluation_folder, "R_evaluation_cum.png"))
+        #plot.plot_R_evaluation_pareto(learned_R_data,benchmark_R_data,R0=None,filename=os.path.join(evaluation_folder, "R_evaluation_pareto.png"))
+    
+  
+    
     # old (keep for now)
     #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
     

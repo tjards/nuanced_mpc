@@ -21,6 +21,7 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from types import SimpleNamespace
+import os
 
 
 class VortexConfig():
@@ -74,7 +75,8 @@ class VortexField:
 
         self.config = VortexConfig()
         print('vortex initialized')
-        self.plot_field_at_t('visualization/plots/field.png', 0)
+        os.makedirs('visualization/field/', exist_ok=True)
+        self.plot_field_at_t('visualization/field/field.png', 0)
 
     def evolve_centers(self, t):
 

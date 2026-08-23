@@ -362,198 +362,6 @@ def plot_trajectory(time_history, state_history, x_target=None, filename='trajec
     plt.close(fig)
 
 
-
-def plot_R_evaluation_mixed(
-    learned_data,
-    benchmark_data,
-    R0=None,
-    filename="visualization/cala/R_evaluation.png"
-):
-    import os
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    # --------------------------------------------------
-    # unpack
-    # --------------------------------------------------
-    t_learned = np.asarray(learned_data["step"]).reshape(-1)
-    t_benchmark = np.asarray(benchmark_data["step"]).reshape(-1)
-
-    x_learned = np.asarray(learned_data["state"])
-    x_benchmark = np.asarray(benchmark_data["state"])
-
-    target_learned = np.asarray(learned_data["target"])
-    target_benchmark = np.asarray(benchmark_data["target"])
-
-    u_learned = np.asarray(learned_data["input"])
-    u_benchmark = np.asarray(benchmark_data["input"])
-
-    # assume constant sample time
-    if len(t_learned) >= 2:
-        Ts = float(np.mean(np.diff(t_learned)))
-    else:
-        Ts = 1.0
-
-    # --------------------------------------------------
-    # tracking error
-    # --------------------------------------------------
-    error_learned = np.linalg.norm(
-        x_learned[:, :2] - target_learned[:, :2],
-        axis=1
-    )
-
-    error_benchmark = np.linalg.norm(
-        x_benchmark[:, :2] - target_benchmark[:, :2],
-        axis=1
-    )
-
-    rmse_learned = np.sqrt(np.mean(error_learned**2))
-    rmse_benchmark = np.sqrt(np.mean(error_benchmark**2))
-
-    improvement = (
-        100.0 * (rmse_benchmark - rmse_learned)
-        / (rmse_benchmark + 1e-12)
-    )
-
-    # --------------------------------------------------
-    # control effort
-    # --------------------------------------------------
-    # default: raw squared norm ||u||^2
-    if R0 is None:
-        effort_learned = np.sum(u_learned**2, axis=1)
-        effort_benchmark = np.sum(u_benchmark**2, axis=1)
-        effort_label = r"$||u||^2$"
-    else:
-        R0 = np.asarray(R0)
-        effort_learned = np.einsum("bi,ij,bj->b", u_learned, R0, u_learned)
-        effort_benchmark = np.einsum("bi,ij,bj->b", u_benchmark, R0, u_benchmark)
-        effort_label = r"$u^\top R_0 u$"
-
-    cumulative_effort_learned = np.cumsum(effort_learned) * Ts
-    cumulative_effort_benchmark = np.cumsum(effort_benchmark) * Ts
-
-    mean_effort_learned = float(np.mean(effort_learned))
-    mean_effort_benchmark = float(np.mean(effort_benchmark))
-
-    total_effort_learned = float(cumulative_effort_learned[-1])
-    total_effort_benchmark = float(cumulative_effort_benchmark[-1])
-
-    effort_saving = (
-        100.0 * (total_effort_benchmark - total_effort_learned)
-        / (total_effort_benchmark + 1e-12)
-    )
-
-    # --------------------------------------------------
-    # plot
-    # --------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-
-    # ----------------------------------------------
-    # trajectory
-    # ----------------------------------------------
-    ax = axes[0, 0]
-    ax.plot(
-        target_learned[:, 0],
-        target_learned[:, 1],
-        linestyle="--",
-        linewidth=2,
-        label="Target"
-    )
-    ax.plot(
-        x_learned[:, 0],
-        x_learned[:, 1],
-        linewidth=2,
-        label=f"Learned R (RMSE={rmse_learned:.3f})"
-    )
-    ax.plot(
-        x_benchmark[:, 0],
-        x_benchmark[:, 1],
-        linewidth=2,
-        label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
-    )
-    ax.set_title("Tracking trajectory")
-    ax.set_xlabel("$x_0$")
-    ax.set_ylabel("$x_1$")
-    ax.set_aspect("equal")
-    ax.grid(True)
-    ax.legend()
-
-    # ----------------------------------------------
-    # tracking error
-    # ----------------------------------------------
-    ax = axes[0, 1]
-    ax.plot(t_learned, error_learned, linewidth=2, label="Learned R")
-    ax.plot(t_benchmark, error_benchmark, linewidth=2, label="Benchmark R")
-    ax.set_title(f"Tracking error — RL improvement = {improvement:.1f}%")
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Position error")
-    ax.grid(True)
-    ax.legend()
-
-    # ----------------------------------------------
-    # instantaneous effort
-    # ----------------------------------------------
-    ax = axes[1, 0]
-    ax.plot(
-        t_learned,
-        effort_learned,
-        linewidth=2,
-        label=f"Learned R (mean={mean_effort_learned:.3f})"
-    )
-    ax.plot(
-        t_benchmark,
-        effort_benchmark,
-        linewidth=2,
-        label=f"Benchmark R (mean={mean_effort_benchmark:.3f})"
-    )
-    ax.set_title("Instantaneous control effort")
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel(effort_label)
-    ax.grid(True)
-    ax.legend()
-
-    # ----------------------------------------------
-    # cumulative effort
-    # ----------------------------------------------
-    ax = axes[1, 1]
-    ax.plot(
-        t_learned,
-        cumulative_effort_learned,
-        linewidth=2,
-        label=f"Learned R (total={total_effort_learned:.3f})"
-    )
-    ax.plot(
-        t_benchmark,
-        cumulative_effort_benchmark,
-        linewidth=2,
-        label=f"Benchmark R (total={total_effort_benchmark:.3f})"
-    )
-    ax.set_title(f"Cumulative control effort — saving = {effort_saving:.1f}%")
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel(r"$\sum ||u||^2 \, \Delta t$")
-    ax.grid(True)
-    ax.legend()
-
-    fig.suptitle("RL-Learned MPC R vs Static Benchmark R")
-    fig.tight_layout()
-
-    folder = os.path.dirname(filename)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
-    fig.savefig(filename, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # console summary
-    # --------------------------------------------------
-    print(f"Learned-R position RMSE:      {rmse_learned:.4f}")
-    print(f"Benchmark-R position RMSE:    {rmse_benchmark:.4f}")
-    print(f"RMSE improvement:             {improvement:.2f}%")
-    print(f"Learned-R total effort:       {total_effort_learned:.4f}")
-    print(f"Benchmark-R total effort:     {total_effort_benchmark:.4f}")
-    print(f"Effort saving:                {effort_saving:.2f}%")
-
 def plot_R_evaluation(learned_data, benchmark_data, filename="visualization/cala/R_evaluation.png"):
 
     import os
@@ -692,3 +500,437 @@ def plot_R_evaluation(learned_data, benchmark_data, filename="visualization/cala
     print(f"Learned-R position RMSE:   {rmse_learned:.4f}")
     print(f"Benchmark-R position RMSE: {rmse_benchmark:.4f}")
     print(f"RMSE improvement:          {improvement:.2f}%")
+
+def plot_R_evaluation_cum(
+    learned_data,
+    benchmark_data,
+    R0=None,
+    filename="visualization/cala/R_evaluation_cum.png"
+):
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # --------------------------------------------------
+    # unpack
+    # --------------------------------------------------
+    t_learned = np.asarray(learned_data["step"]).reshape(-1)
+    t_benchmark = np.asarray(benchmark_data["step"]).reshape(-1)
+
+    x_learned = np.asarray(learned_data["state"])
+    x_benchmark = np.asarray(benchmark_data["state"])
+
+    target_learned = np.asarray(learned_data["target"])
+    target_benchmark = np.asarray(benchmark_data["target"])
+
+    u_learned = np.asarray(learned_data["input"])
+    u_benchmark = np.asarray(benchmark_data["input"])
+
+    # use common length just in case
+    n = min(
+        len(t_learned),
+        len(t_benchmark),
+        len(x_learned),
+        len(x_benchmark),
+        len(target_learned),
+        len(target_benchmark),
+        len(u_learned),
+        len(u_benchmark),
+    )
+
+    t_learned = t_learned[:n]
+    t_benchmark = t_benchmark[:n]
+    x_learned = x_learned[:n]
+    x_benchmark = x_benchmark[:n]
+    target_learned = target_learned[:n]
+    target_benchmark = target_benchmark[:n]
+    u_learned = u_learned[:n]
+    u_benchmark = u_benchmark[:n]
+
+    # sample time
+    if n >= 2:
+        Ts = float(np.mean(np.diff(t_learned)))
+    else:
+        Ts = 1.0
+
+    # --------------------------------------------------
+    # tracking error
+    # --------------------------------------------------
+    error_learned = np.linalg.norm(
+        x_learned[:, :2] - target_learned[:, :2],
+        axis=1
+    )
+
+    error_benchmark = np.linalg.norm(
+        x_benchmark[:, :2] - target_benchmark[:, :2],
+        axis=1
+    )
+
+    rmse_learned = float(np.sqrt(np.mean(error_learned**2)))
+    rmse_benchmark = float(np.sqrt(np.mean(error_benchmark**2)))
+
+    rmse_improvement = (
+        100.0
+        * (rmse_benchmark - rmse_learned)
+        / (rmse_benchmark + 1e-12)
+    )
+
+    # running / cumulative RMSE
+    idx = np.arange(1, n + 1)
+    #running_rmse_learned = np.sqrt(np.cumsum(error_learned**2) / idx)
+    #running_rmse_benchmark = np.sqrt(np.cumsum(error_benchmark**2) / idx)
+    running_rmse_learned = np.cumsum(error_learned**2) * Ts
+    running_rmse_benchmark = np.cumsum(error_benchmark**2) * Ts
+
+    # --------------------------------------------------
+    # control effort
+    # --------------------------------------------------
+    if R0 is None:
+        effort_learned = np.sum(u_learned**2, axis=1)
+        effort_benchmark = np.sum(u_benchmark**2, axis=1)
+        effort_ylabel = r"$\sum ||u||^2 \Delta t$"
+    else:
+        R0 = np.asarray(R0)
+        effort_learned = np.einsum("bi,ij,bj->b", u_learned, R0, u_learned)
+        effort_benchmark = np.einsum("bi,ij,bj->b", u_benchmark, R0, u_benchmark)
+        effort_ylabel = r"$\sum u^\top R_0 u \, \Delta t$"
+
+    cumulative_effort_learned = np.cumsum(effort_learned) * Ts
+    cumulative_effort_benchmark = np.cumsum(effort_benchmark) * Ts
+
+    total_effort_learned = float(cumulative_effort_learned[-1])
+    total_effort_benchmark = float(cumulative_effort_benchmark[-1])
+
+    effort_saving = (
+        100.0
+        * (total_effort_benchmark - total_effort_learned)
+        / (total_effort_benchmark + 1e-12)
+    )
+
+    # --------------------------------------------------
+    # plot layout
+    # --------------------------------------------------
+    fig = plt.figure(figsize=(14, 8))
+    gs = fig.add_gridspec(2, 2, width_ratios=[1.1, 1.0], height_ratios=[1, 1])
+
+    ax_traj = fig.add_subplot(gs[:, 0])   # full left column
+    ax_rmse = fig.add_subplot(gs[0, 1])   # top-right
+    ax_eff  = fig.add_subplot(gs[1, 1])   # bottom-right
+
+    # --------------------------------------------------
+    # left: trajectory
+    # --------------------------------------------------
+    ax_traj.plot(
+        target_learned[:, 0],
+        target_learned[:, 1],
+        linestyle="--",
+        linewidth=2,
+        label="Target"
+    )
+
+    ax_traj.plot(
+        x_learned[:, 0],
+        x_learned[:, 1],
+        linewidth=2,
+        label=f"Learned R (RMSE={rmse_learned:.3f})"
+    )
+
+    ax_traj.plot(
+        x_benchmark[:, 0],
+        x_benchmark[:, 1],
+        linewidth=2,
+        label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
+    )
+
+    ax_traj.set_title("Tracking trajectory")
+    ax_traj.set_xlabel("$x_0$")
+    ax_traj.set_ylabel("$x_1$")
+    ax_traj.set_aspect("equal")
+    ax_traj.grid(True)
+    ax_traj.legend()
+
+    # --------------------------------------------------
+    # top-right: cumulative / running RMSE
+    # --------------------------------------------------
+    ax_rmse.plot(
+        t_learned,
+        running_rmse_learned,
+        linewidth=2,
+        label="Learned R"
+    )
+
+    ax_rmse.plot(
+        t_benchmark,
+        running_rmse_benchmark,
+        linewidth=2,
+        label="Benchmark R"
+    )
+
+    ax_rmse.set_title(
+        f"Cumulative RMSE — RL improvement = {rmse_improvement:.1f}%"
+    )
+    ax_rmse.set_xlabel("Time [s]")
+    ax_rmse.set_ylabel("Running RMSE")
+    ax_rmse.grid(True)
+    ax_rmse.legend()
+
+    # --------------------------------------------------
+    # bottom-right: cumulative effort
+    # --------------------------------------------------
+    ax_eff.plot(
+        t_learned,
+        cumulative_effort_learned,
+        linewidth=2,
+        label=f"Learned R (total={total_effort_learned:.3f})"
+    )
+
+    ax_eff.plot(
+        t_benchmark,
+        cumulative_effort_benchmark,
+        linewidth=2,
+        label=f"Benchmark R (total={total_effort_benchmark:.3f})"
+    )
+
+    ax_eff.set_title(
+        f"Cumulative control effort — saving = {effort_saving:.1f}%"
+    )
+    ax_eff.set_xlabel("Time [s]")
+    ax_eff.set_ylabel(effort_ylabel)
+    ax_eff.grid(True)
+    ax_eff.legend()
+
+    fig.suptitle("RL-Learned MPC R vs Static Benchmark R")
+    fig.tight_layout()
+
+    folder = os.path.dirname(filename)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
+    fig.savefig(
+        filename,
+        dpi=200,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig)
+
+    # --------------------------------------------------
+    # console summary
+    # --------------------------------------------------
+    print(f"Learned-R final RMSE:        {rmse_learned:.4f}")
+    print(f"Benchmark-R final RMSE:      {rmse_benchmark:.4f}")
+    print(f"RMSE improvement:            {rmse_improvement:.2f}%")
+    print(f"Learned-R total effort:      {total_effort_learned:.4f}")
+    print(f"Benchmark-R total effort:    {total_effort_benchmark:.4f}")
+    print(f"Effort saving:               {effort_saving:.2f}%")
+
+def plot_R_evaluation_pareto(
+    learned_data,
+    benchmark_data,
+    R0=None,
+    filename="visualization/cala/R_evaluation_pareto.png"
+):
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # --------------------------------------------------
+    # unpack
+    # --------------------------------------------------
+    t_learned = np.asarray(learned_data["step"]).reshape(-1)
+    t_benchmark = np.asarray(benchmark_data["step"]).reshape(-1)
+
+    x_learned = np.asarray(learned_data["state"])
+    x_benchmark = np.asarray(benchmark_data["state"])
+
+    target_learned = np.asarray(learned_data["target"])
+    target_benchmark = np.asarray(benchmark_data["target"])
+
+    u_learned = np.asarray(learned_data["input"])
+    u_benchmark = np.asarray(benchmark_data["input"])
+
+    # guard against slight length mismatch
+    n = min(
+        len(t_learned),
+        len(t_benchmark),
+        len(x_learned),
+        len(x_benchmark),
+        len(target_learned),
+        len(target_benchmark),
+        len(u_learned),
+        len(u_benchmark),
+    )
+
+    t_learned = t_learned[:n]
+    t_benchmark = t_benchmark[:n]
+    x_learned = x_learned[:n]
+    x_benchmark = x_benchmark[:n]
+    target_learned = target_learned[:n]
+    target_benchmark = target_benchmark[:n]
+    u_learned = u_learned[:n]
+    u_benchmark = u_benchmark[:n]
+
+    # sample time
+    if n >= 2:
+        Ts = float(np.mean(np.diff(t_learned)))
+    else:
+        Ts = 1.0
+
+    # --------------------------------------------------
+    # tracking RMSE
+    # --------------------------------------------------
+    error_learned = np.linalg.norm(
+        x_learned[:, :2] - target_learned[:, :2],
+        axis=1
+    )
+
+    error_benchmark = np.linalg.norm(
+        x_benchmark[:, :2] - target_benchmark[:, :2],
+        axis=1
+    )
+
+    rmse_learned = float(np.sqrt(np.mean(error_learned**2)))
+    rmse_benchmark = float(np.sqrt(np.mean(error_benchmark**2)))
+
+    rmse_improvement = (
+        100.0
+        * (rmse_benchmark - rmse_learned)
+        / (rmse_benchmark + 1e-12)
+    )
+
+    # --------------------------------------------------
+    # control effort
+    # --------------------------------------------------
+    if R0 is None:
+        effort_learned = np.sum(u_learned**2, axis=1)
+        effort_benchmark = np.sum(u_benchmark**2, axis=1)
+        xlabel = r"Total control effort $\sum ||u||^2 \Delta t$"
+    else:
+        R0 = np.asarray(R0)
+        effort_learned = np.einsum("bi,ij,bj->b", u_learned, R0, u_learned)
+        effort_benchmark = np.einsum("bi,ij,bj->b", u_benchmark, R0, u_benchmark)
+        xlabel = r"Total control effort $\sum u^\top R_0 u \, \Delta t$"
+
+    total_effort_learned = float(np.sum(effort_learned) * Ts)
+    total_effort_benchmark = float(np.sum(effort_benchmark) * Ts)
+
+    effort_saving = (
+        100.0
+        * (total_effort_benchmark - total_effort_learned)
+        / (total_effort_benchmark + 1e-12)
+    )
+
+    # --------------------------------------------------
+    # determine qualitative result
+    # --------------------------------------------------
+    if (rmse_learned <= rmse_benchmark) and (total_effort_learned <= total_effort_benchmark):
+        outcome = "Learned R dominates benchmark"
+    elif (rmse_learned >= rmse_benchmark) and (total_effort_learned >= total_effort_benchmark):
+        outcome = "Learned R is dominated by benchmark"
+    else:
+        outcome = "Tracking / effort tradeoff"
+
+    # --------------------------------------------------
+    # plot
+    # --------------------------------------------------
+    fig, ax = plt.subplots(figsize=(8, 7))
+
+    # points
+    ax.scatter(
+        total_effort_benchmark,
+        rmse_benchmark,
+        s=140,
+        label="Benchmark R",
+        zorder=3
+    )
+
+    ax.scatter(
+        total_effort_learned,
+        rmse_learned,
+        s=140,
+        label="Learned R",
+        zorder=3
+    )
+
+    # line connecting them
+    ax.plot(
+        [total_effort_benchmark, total_effort_learned],
+        [rmse_benchmark, rmse_learned],
+        linestyle="--",
+        linewidth=1.5,
+        zorder=2
+    )
+
+    # annotations
+    ax.annotate(
+        f"Benchmark R\nRMSE={rmse_benchmark:.3f}\nEffort={total_effort_benchmark:.3f}",
+        (total_effort_benchmark, rmse_benchmark),
+        xytext=(10, 10),
+        textcoords="offset points"
+    )
+
+    ax.annotate(
+        f"Learned R\nRMSE={rmse_learned:.3f}\nEffort={total_effort_learned:.3f}",
+        (total_effort_learned, rmse_learned),
+        xytext=(10, -35),
+        textcoords="offset points"
+    )
+
+    # axis labels / title
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Position RMSE")
+
+    ax.set_title(
+        "RL-Learned MPC R vs Static Benchmark R\n"
+        f"RMSE improvement = {rmse_improvement:.1f}%   |   "
+        f"Effort saving = {effort_saving:.1f}%"
+    )
+
+    ax.grid(True)
+    ax.legend()
+
+    # pad limits slightly
+    x_vals = np.array([total_effort_benchmark, total_effort_learned], dtype=float)
+    y_vals = np.array([rmse_benchmark, rmse_learned], dtype=float)
+
+    x_pad = max(0.05 * (x_vals.max() - x_vals.min() + 1e-12), 1e-3)
+    y_pad = max(0.05 * (y_vals.max() - y_vals.min() + 1e-12), 1e-3)
+
+    ax.set_xlim(x_vals.min() - x_pad, x_vals.max() + x_pad)
+    ax.set_ylim(y_vals.min() - y_pad, y_vals.max() + y_pad)
+
+    # small textbox
+    ax.text(
+        0.02,
+        0.98,
+        outcome,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        bbox=dict(boxstyle="round", alpha=0.15)
+    )
+
+    fig.tight_layout()
+
+    folder = os.path.dirname(filename)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
+    fig.savefig(
+        filename,
+        dpi=200,
+        bbox_inches="tight"
+    )
+    plt.close(fig)
+
+    # --------------------------------------------------
+    # console summary
+    # --------------------------------------------------
+    print(f"Learned-R RMSE:              {rmse_learned:.4f}")
+    print(f"Benchmark-R RMSE:            {rmse_benchmark:.4f}")
+    print(f"RMSE improvement:            {rmse_improvement:.2f}%")
+    print(f"Learned-R total effort:      {total_effort_learned:.4f}")
+    print(f"Benchmark-R total effort:    {total_effort_benchmark:.4f}")
+    print(f"Effort saving:               {effort_saving:.2f}%")
+    print(f"Pareto assessment:           {outcome}")
+

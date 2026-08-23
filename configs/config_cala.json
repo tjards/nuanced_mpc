@@ -18,10 +18,10 @@
             } 
     },
     "cala_mpc_nld": {
-        "d_max": 5.5,
+        "d_max": 7.0,
         "mu_init": 0.5,
         "mu_init_noise": 0.01,
-        "sigma_init": 0.35,
+        "sigma_init": 0.30,
         "sigma_min": 0.03,
         "sigma_max": 0.35,
         "learning_rate": 0.3,
