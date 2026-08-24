@@ -51,6 +51,7 @@ class Modeller():
         self.learning_rate  = cfg['learning_rate'] #learning_rate
         self.optimizer      = cfg['optimizer'] #optimizer
         self.random_seed    = cfg['random_seed'] #random_seed
+        self.rng             = np.random.default_rng(seed=self.random_seed)
         
         self.update_parameters_rate     = int(cfg['update_parameters_rate']) 
         self.update_parameters_count    = 0
@@ -84,7 +85,7 @@ class Modeller():
         excite_max_steps    = int(excite_time / self.Ts) # excitation duration 
         
         # initialize excitation 
-        rng             = np.random.default_rng(seed=self.random_seed)
+        #rng             = np.random.default_rng(seed=self.random_seed)
         u_exc           = np.zeros_like(u_min)    # random input 
         excite_count    = excite_hold_steps       # trigger switch immediately 
         rockback        = False                   # set to False initially, avoids biasing the model in one direction
@@ -102,7 +103,7 @@ class Modeller():
             # determine if rockback needed 
             if excite_count >= excite_hold_steps and not rockback:
                 excite_count = 0
-                u_exc = rng.uniform(u_min, u_max)
+                u_exc = self.rng.uniform(u_min, u_max)
                 rockback = True
             elif excite_count >= excite_hold_steps and rockback:
                 excite_count = 0
@@ -224,6 +225,14 @@ class MPC():
         self.B = np.array(np.array(cfg['B']), ndmin=2)           # input matrix
         self.Q = np.array(np.diag(cfg['Q_diag']), ndmin=2)       # state cost matrix
         self.R = np.array(np.diag(cfg['R_diag']), ndmin=2)       # input cost matrix
+
+        rng = np.random.default_rng(cfg.get("random_seed", 42))
+        # optional modelling noise
+        if cfg['model_noise'] is not None:
+            noise = float(cfg['model_noise'])
+            self.A *= (1.0 + noise * rng.standard_normal(self.A.shape))
+            self.B *= (1.0 + noise * rng.standard_normal(self.B.shape))
+
 
         # we can compute terminal cost based on solution to Discrete Algebraic Riccati Equation
         P   = cfg['P_diag']

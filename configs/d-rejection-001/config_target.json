@@ -1,0 +1,20 @@
+{
+    "initial_state": [0.0, 0.0, 0.0, 0.0],
+    "dynamics": "wander",
+    "period": 35,
+    "random_seed": 42,
+    "wander_params": 
+    {
+        "x-scale": [2.8, 4.0],
+        "y-scale": [2.4, 3.6],
+        "skew": [-0.55, 0.55],
+        "rotation": [-1.25, 1.25],
+        "x-wobble": [0.08, 0.30],
+        "y-wobble": [0.08, 0.30],
+        "x-wobble_freq": [1.5, 4.5],
+        "y-wobble_freq": [1.5, 4.5],
+        "x-phase": [0.0, 6.28],
+        "y-phase": [0.0, 6.28]
+
+    }
+}

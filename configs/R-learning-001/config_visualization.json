@@ -1,0 +1,15 @@
+{
+    "animate_path": "visualization/animations/trajectory.gif",
+    "plot_inputs_path": "visualization/control/inputs.png",
+    "plot_velocities_path": "visualization/control/velocities.png",
+    "field_folder": "visualization/field",
+    "plot_trajectory_path":"visualization/control/trajectory.png",
+    "animate_field": "visualization/animations/field.gif",
+    "control_folder": "visualization/control",
+    "training_folder": "visualization/cala/training",
+    "evaluation_folder": "visualization/cala/evaluation",
+    "keep_modelling_history": false,
+    "show_field": false,
+    "do_plots": true,
+    "do_animate": false
+}

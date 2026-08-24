@@ -20,8 +20,8 @@ import os
 pipeline = {
     'model':        False,
     'control':      True,
-    'rl_train':     True,
-    'rl_evaluate':  True,
+    'rl_train':     False,
+    'rl_evaluate':  False,
     'visuals':      True
 }
 
@@ -376,6 +376,7 @@ def main(configs_base = 'configs/default'):
         plot_trajectory_path    = cfg_viz['plot_trajectory_path']
 
         # make folders
+        os.makedirs('visualization/animations', exist_ok=True)
         training_folder         = cfg_viz['training_folder']
         os.makedirs(training_folder, exist_ok=True)
         evaluation_folder       = cfg_viz['evaluation_folder']
@@ -428,5 +429,5 @@ def main(configs_base = 'configs/default'):
 
 if __name__ == "__main__":
 
-    main(configs_base = 'configs/default')
+    main(configs_base = 'configs/d-rejection-001')
 
