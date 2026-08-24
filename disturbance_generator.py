@@ -3,10 +3,10 @@ import numpy as np
 
 class Disturbance:
 
-    def __init__(self, field = None, x = None, t = None):
+    def __init__(self, configs_base, field = None, x = None, t = None):
 
         # load parameters from config
-        with open('configs/config_disturbance.json') as f:
+        with open(f'{configs_base}/config_disturbance.json') as f:
             cfg = json.load(f)
 
         # get disturbance configs 

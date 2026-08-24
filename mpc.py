@@ -31,9 +31,9 @@ import json
 # online modeller
 class Modeller():
     
-    def __init__(self):
+    def __init__(self, configs_base):
 
-        with open('configs/config_mpc.json') as f:
+        with open(f'{configs_base}/config_mpc.json') as f:
             cfg = json.load(f)
 
         A   = 0*np.array(cfg['A'])
@@ -214,9 +214,9 @@ class Modeller():
 # controller
 class MPC():
 
-    def __init__(self, x0):
+    def __init__(self, configs_base, x0):
 
-        with open('configs/config_mpc.json') as f:
+        with open(f'{configs_base}/config_mpc.json') as f:
             cfg = json.load(f)
         
         # model

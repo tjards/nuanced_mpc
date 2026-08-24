@@ -3,10 +3,10 @@ import json
 
 class Plant:
 
-    def __init__(self):
+    def __init__(self, configs_base):
 
         # load parameters from config
-        with open('configs/config_plant.json') as f:
+        with open(f'{configs_base}/config_plant.json') as f:
             cfg = json.load(f)
 
         A   = np.array(cfg['A'])

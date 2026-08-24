@@ -22,6 +22,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from types import SimpleNamespace
 import os
+import json
 
 
 class VortexConfig():
@@ -71,12 +72,17 @@ class VortexConfig():
 
 class VortexField:
 
-    def __init__(self):
+    def __init__(self, configs_base):
+
+        # load parameters from config
+        with open(f'{configs_base}/config_visualization.json') as f:
+            cfg_viz = json.load(f)
+        field_folder = cfg_viz['field_folder']
 
         self.config = VortexConfig()
         print('vortex initialized')
-        os.makedirs('visualization/field/', exist_ok=True)
-        self.plot_field_at_t('visualization/field/field.png', 0)
+        os.makedirs(f'{field_folder}', exist_ok=True)
+        self.plot_field_at_t(f'{field_folder}/field.png', 0)
 
     def evolve_centers(self, t):
 

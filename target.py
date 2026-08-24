@@ -4,10 +4,10 @@ import numpy as np
 
 class Target:
 
-    def __init__(self):
+    def __init__(self, configs_base):
 
         # load target configuration
-        with open("configs/config_target.json") as f:
+        with open(f"{configs_base}/config_target.json") as f:
             cfg = json.load(f)
 
         self.xr             = np.array(cfg["initial_state"], dtype = float)

@@ -9,12 +9,12 @@ import h5py
 # master calls
 # ---------------------------------
 
-def cala_suite(controller, filepath="data/cala_learning.h5", overwrite=True):
+def cala_suite(configs_base, controller, data_path="data/cala_learning.h5", overwrite=True):
 
-    feature_map     = RTFeatureMap()
-    cala_nld        = CALA_NLD(feature_map, controller.nu)
-    cala_data = CALADataset(filepath=filepath, overwrite=overwrite)
-    horizon_manager = HorizonManager(feature_map, cala_nld, controller, data=cala_data)
+    feature_map     = RTFeatureMap(configs_base)
+    cala_nld        = CALA_NLD(configs_base, feature_map, controller.nu)
+    cala_data       = CALADataset(filepath=data_path, overwrite=overwrite)
+    horizon_manager = HorizonManager(configs_base, feature_map, cala_nld, controller, data=cala_data)
 
     return horizon_manager
 
@@ -44,9 +44,9 @@ def post_controller(horizon_manager, predicted_reference, x, xr):
 
 class RTFeatureMap():
     
-    def __init__(self):
+    def __init__(self, configs_base):
 
-        with open('configs/config_cala.json') as f:
+        with open(f'{configs_base}/config_cala.json') as f:
             cfg = json.load(f)
             cfg_fm = cfg["feature_map"]
 
@@ -295,7 +295,7 @@ This residual can then be used as follows:
 
 class CALA_NLD():
 
-    def __init__(self, feature_map, n_inputs):
+    def __init__(self, configs_base, feature_map, n_inputs):
 
         # enforce formats for passed in variables
         self.feature_map    = feature_map
@@ -303,7 +303,7 @@ class CALA_NLD():
         self.n_inputs       =  int(n_inputs)
 
         # bring in configs 
-        with open('configs/config_cala.json') as f:
+        with open(f'{configs_base}/config_cala.json') as f:
             cfg = json.load(f)
             cfg_cala = cfg["cala_mpc_nld"]
 
@@ -545,9 +545,9 @@ class CALA_NLD():
 
 class HorizonManager():
 
-    def __init__(self, feature_map, cala, mpc, data=None):
+    def __init__(self, configs_base, feature_map, cala, mpc, data=None):
 
-        with open('configs/config_cala.json') as f:
+        with open(f'{configs_base}/config_cala.json') as f:
 
             cfg = json.load(f)
             cfg_hm = cfg["horizon_manager"]
