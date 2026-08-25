@@ -286,6 +286,285 @@ def plot_velocities(time_history, state_history, constraints, vel_indices=None, 
     plt.close(fig)
 
 
+
+
+def plot_trajectory_compare(
+    time_history_list,
+    state_history_list,
+    x_target_list=None,
+    filename='trajectory.png',
+    target_tolerance=1e-3, 
+    custom_label = ['target', 'with d-rejection', 'without d-rejection']
+):
+
+
+    traj_labels = custom_label
+
+    n_trials = len(state_history_list)
+
+    if len(time_history_list) != n_trials:
+        raise ValueError(
+            "time_history_list and state_history_list must have the same length"
+        )
+
+    if x_target_list is not None and len(x_target_list) != n_trials:
+        raise ValueError(
+            "x_target_list must have the same length as state_history_list"
+        )
+
+    # --------------------------------------------------------------
+    # Convert / validate histories
+    # --------------------------------------------------------------
+    states_list = []
+
+    for i, state_history in enumerate(state_history_list):
+
+        states = np.asarray(state_history)
+
+        if states.ndim != 2 or states.shape[1] < 2:
+            raise ValueError(
+                f"state_history_list[{i}] must have shape (T, nx) with nx >= 2"
+            )
+
+        states_list.append(states)
+
+    # --------------------------------------------------------------
+    # Target
+    # --------------------------------------------------------------
+    target = None
+
+    if x_target_list is not None:
+
+        targets = []
+
+        for i, x_target in enumerate(x_target_list):
+
+            target_i = np.asarray(x_target)
+
+            if target_i.ndim == 1:
+                target_i = target_i.reshape(1, -1)
+
+            if target_i.ndim != 2 or target_i.shape[1] < 2:
+                raise ValueError(
+                    f"x_target_list[{i}] must have shape (T, nx) with nx >= 2"
+                )
+
+            targets.append(target_i)
+
+        # First target is the reference target
+        target = targets[0]
+
+        # Verify all targets are sufficiently close to the first
+        for i, target_i in enumerate(targets[1:], start=1):
+
+            if target_i.shape != target.shape:
+                raise ValueError(
+                    f"Target {i} has shape {target_i.shape}, "
+                    f"but target 0 has shape {target.shape}"
+                )
+
+            max_difference = np.max(
+                np.abs(target_i[:, :2] - target[:, :2])
+            )
+
+            # targets should be the same (or close), else the comparison may not be fair
+            if max_difference > target_tolerance:
+                raise ValueError(
+                    f"Target {i} differs from target 0 by as much as "
+                    f"{max_difference:.6g}, exceeding target_tolerance="
+                    f"{target_tolerance:.6g}"
+                )
+
+    # --------------------------------------------------------------
+    # Plot bounds using ALL trajectories + single target
+    # --------------------------------------------------------------
+    all_pts = [states[:, :2] for states in states_list]
+
+    if target is not None:
+        all_pts.append(target[:, :2])
+
+    all_pts = np.vstack(all_pts)
+
+    margin = 0.5
+
+    x1_min = all_pts[:, 0].min() - margin
+    x1_max = all_pts[:, 0].max() + margin
+    x2_min = all_pts[:, 1].min() - margin
+    x2_max = all_pts[:, 1].max() + margin
+
+    # make square
+    r1 = x1_max - x1_min
+    r2 = x2_max - x2_min
+
+    if r1 > r2:
+        pad = 0.5 * (r1 - r2)
+        x2_min -= pad
+        x2_max += pad
+
+    else:
+        pad = 0.5 * (r2 - r1)
+        x1_min -= pad
+        x1_max += pad
+
+    # --------------------------------------------------------------
+    # Labels
+    # --------------------------------------------------------------
+    #traj_labels = [
+    #    'with d-rejection',
+    #    'without d-rejection'
+    #]
+
+    # ==============================================================
+    # PLOT 1: TRAJECTORIES
+    # ==============================================================
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    # Target — plot once
+    if target is not None:
+
+        ax.plot(
+            target[:, 0],
+            target[:, 1],
+            color='green',
+            linestyle='--',
+            lw=2.0,
+            label=traj_labels[0],
+            zorder=2
+        )
+
+        # final target
+        ax.plot(
+            target[-1, 0],
+            target[-1, 1],
+            '+',
+            color='green',
+            markersize=14,
+            markeredgewidth=2,
+            zorder=6
+        )
+
+    # --------------------------------------------------------------
+    # Trajectories
+    # --------------------------------------------------------------
+    trajectory_colors = []
+
+    for i, states in enumerate(states_list):
+
+        traj_label = traj_labels[i+1]
+
+        line, = ax.plot(
+            states[:, 0],
+            states[:, 1],
+            linestyle='-',
+            lw=2.0,
+            label=traj_label,
+            zorder=3
+        )
+
+        color = line.get_color()
+        trajectory_colors.append(color)
+
+        ax.plot(
+            states[-1, 0],
+            states[-1, 1],
+            'o',
+            color=color,
+            markersize=6,
+            zorder=5
+        )
+
+    # --------------------------------------------------------------
+    # Formatting
+    # --------------------------------------------------------------
+    ax.set_xlim(x1_min, x1_max)
+    ax.set_ylim(x2_min, x2_max)
+
+    ax.set_xlabel('$x$-position', fontsize=10)
+    ax.set_ylabel('$y$-position', fontsize=10)
+    ax.set_title('Trajectory Comparison through Disturbance Field', fontsize=10)
+
+    ax.grid(True, linestyle=':', alpha=0.5)
+    ax.set_aspect('equal')
+
+    ax.legend(
+        loc='upper right',
+        fontsize=10
+    )
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=150)
+    print(f"Trajectory plot saved to '{filename}'")
+    plt.close(fig)
+
+    # ==============================================================
+    # PLOT 2: CUMULATIVE TRACKING ERROR
+    # ==============================================================
+
+    if target is not None:
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        for i, (time_history, states) in enumerate(
+            zip(time_history_list, states_list)
+        ):
+
+            time = np.asarray(time_history)
+
+            # Ensure state, target, and time histories line up
+            n = min(
+                len(time),
+                len(states),
+                len(target)
+            )
+
+            time_i = time[:n]
+            states_i = states[:n]
+            target_i = target[:n]
+
+            # Instantaneous Euclidean position error
+            tracking_error = np.linalg.norm(
+                states_i[:, :2] - target_i[:, :2],
+                axis=1
+            )
+
+            # Cumulative tracking error
+            cumulative_error = np.cumsum(tracking_error)
+
+            ax.plot(
+                time_i,
+                cumulative_error,
+                color=trajectory_colors[i],
+                lw=2.0,
+                label=traj_labels[i+1]
+            )
+
+        ax.set_xlabel('Time (s)', fontsize=12)
+        ax.set_ylabel('Cumulative Tracking Error', fontsize=12)
+        ax.set_title('Tracking Performance through Disturbance Field', fontsize=13)
+
+        ax.grid(True, linestyle=':', alpha=0.5)
+
+        ax.legend(
+            loc='upper left',
+            fontsize=10
+        )
+
+        plt.tight_layout()
+
+        # Create second filename from first
+        base, ext = os.path.splitext(filename)
+        error_filename = f"{base}_tracking_error{ext}"
+
+        plt.savefig(error_filename, dpi=150)
+        print(
+            f"Cumulative tracking error plot saved to "
+            f"'{error_filename}'"
+        )
+
+        plt.close(fig)
+
+
 def plot_trajectory(time_history, state_history, x_target=None, filename='trajectory.png'):
 
     states = np.array(state_history)   # shape: (T, nx)
@@ -435,14 +714,16 @@ def plot_R_evaluation(learned_data, benchmark_data, filename="visualization/cala
         x_learned[:, 0],
         x_learned[:, 1],
         linewidth=2,
-        label=f"Learned R (RMSE={rmse_learned:.3f})"
+        label="Learned R"
+        #label=f"Learned R (RMSE={rmse_learned:.3f})"
     )
 
     ax.plot(
         x_benchmark[:, 0],
         x_benchmark[:, 1],
         linewidth=2,
-        label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
+        label=f"Benchmark R"
+        #label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
     )
 
     ax.set_title("Tracking trajectory")
@@ -625,6 +906,7 @@ def plot_R_evaluation_cum(
         target_learned[:, 0],
         target_learned[:, 1],
         linestyle="--",
+        color = 'green',
         linewidth=2,
         label="Target"
     )
@@ -633,14 +915,16 @@ def plot_R_evaluation_cum(
         x_learned[:, 0],
         x_learned[:, 1],
         linewidth=2,
-        label=f"Learned R (RMSE={rmse_learned:.3f})"
+        label="Learned R"
+        #label=f"Learned R (RMSE={rmse_learned:.3f})"
     )
 
     ax_traj.plot(
         x_benchmark[:, 0],
         x_benchmark[:, 1],
         linewidth=2,
-        label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
+        label="Benchmark R"
+        #label=f"Benchmark R (RMSE={rmse_benchmark:.3f})"
     )
 
     ax_traj.set_title("Tracking trajectory")
@@ -668,7 +952,7 @@ def plot_R_evaluation_cum(
     )
 
     ax_rmse.set_title(
-        f"Cumulative RMSE — RL improvement = {rmse_improvement:.1f}%"
+        f"Cumulative RMSE — RL improvement: {rmse_improvement:.1f}%"
     )
     ax_rmse.set_xlabel("Time [s]")
     ax_rmse.set_ylabel("Running RMSE")
@@ -682,18 +966,20 @@ def plot_R_evaluation_cum(
         t_learned,
         cumulative_effort_learned,
         linewidth=2,
-        label=f"Learned R (total={total_effort_learned:.3f})"
+        label="Learned R"
+        #label=f"Learned R (total={total_effort_learned:.3f})"
     )
 
     ax_eff.plot(
         t_benchmark,
         cumulative_effort_benchmark,
         linewidth=2,
-        label=f"Benchmark R (total={total_effort_benchmark:.3f})"
+        label="Benchmark R"
+        #label=f"Benchmark R (total={total_effort_benchmark:.3f})"
     )
 
     ax_eff.set_title(
-        f"Cumulative control effort — saving = {effort_saving:.1f}%"
+        f"Cumulative control effort - Change: {-effort_saving:.1f}%"
     )
     ax_eff.set_xlabel("Time [s]")
     ax_eff.set_ylabel(effort_ylabel)

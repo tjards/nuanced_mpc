@@ -18,11 +18,12 @@ import os
 # Pipeline Setup
 # ------------------------------------------------------------------ 
 pipeline = {
-    'model':        False,
-    'control':      True,
-    'rl_train':     False,
-    'rl_evaluate':  False,
-    'visuals':      True
+    'model':            False,
+    'control':          True,
+    'rl_train':         True,
+    'rl_evaluate':      True,
+    'analyze_d_reject': True,
+    'visuals':          True
 }
 
 # main function
@@ -346,13 +347,49 @@ def main(configs_base = 'configs/default'):
             eval_data.store(flush_after=True)
 
             t_eval = t_next
-            t += controller.Ts
+            #t += controller.Ts
+            t += controller_learned.Ts
 
         # pull back from disk
         learned_R_data = eval_data.read("rl_learned_R")
         benchmark_R_data = eval_data.read("benchmark_R")
 
+        # compare
+        rl_compare_steps = [learned_R_data['step'], benchmark_R_data['step']]
+        rl_compare_states = [learned_R_data['state'], benchmark_R_data['state']]
+        rl_compare_targets = [learned_R_data['target'], benchmark_R_data['target']]
+        plot.plot_trajectory_compare(rl_compare_steps, 
+                                     rl_compare_states, 
+                                     rl_compare_targets, 
+                                     filename='visualization/cala/evaluation/trajectory_compare.png', 
+                                     target_tolerance = 0.1, 
+                                     custom_label = ['target', 'MPC-DR-CALA', 'MPC-DR'])
 
+
+
+    # ------------------------------------------------------------------
+    # Analyze Disturbance Rejection (demo: data collected earlier)
+    # ------------------------------------------------------------------
+    if pipeline['analyze_d_reject']:
+
+        # make a dir
+        os.makedirs('visualization/analyze_d_reject', exist_ok=True)
+
+        # pull and plot the data for no rejection
+        data_d_false_obj = Dataset(filepath='data/dataset_d-reject_false.h5',overwrite=False)
+        data_d_false = data_d_false_obj.read('controller')
+        plot.plot_trajectory(data_d_false['step'],data_d_false['state'], x_target=data_d_false['target'], filename='visualization/analyze_d_reject/trajectory_false.png')
+
+        # pull and plot the data with rejection
+        data_d_true_obj = Dataset(filepath='data/dataset_d-reject_true.h5',overwrite=False)
+        data_d_true = data_d_true_obj.read('controller')
+        plot.plot_trajectory(data_d_true['step'],data_d_true['state'], x_target=data_d_true['target'], filename='visualization/analyze_d_reject/trajectory_true.png')
+
+        # compare
+        compare_steps = [data_d_true['step'], data_d_false['step']]
+        compare_states = [data_d_true['state'], data_d_false['state']]
+        compare_targets = [data_d_true['target'], data_d_false['target']]
+        plot.plot_trajectory_compare(compare_steps, compare_states, compare_targets, filename='visualization/analyze_d_reject/trajectory_compare.png', target_tolerance = 0.1)
 
     # ------------------------------------------------------------------
     # Visualizations
@@ -429,5 +466,5 @@ def main(configs_base = 'configs/default'):
 
 if __name__ == "__main__":
 
-    main(configs_base = 'configs/d-rejection-001')
+    main(configs_base = 'configs/R-learning-001')
 
