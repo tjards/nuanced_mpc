@@ -35,29 +35,17 @@ $$
 
 - **Actions**. Operating context is encoded through feature activations processed by a Continuous Action Learning Automaton (CALA). Learned parameters ($\Theta$) modify the nominal relative weights of the control effort ($R_0$) portion of an MPC optimization through a learned mapping ($\rho$):
 
-$$
-R_k
-=
-R_0\odot\rho(\phi_k,\Theta).
-$$
+```math
+R_k = R_0\odot\rho(\phi_k;\Theta)
+```
 
 - **Disturbance Residuals**. We preserve a distinct role for conventional adaptation strategies. Specifically, there are well-established techniques for employing local disturbance estimates ($\hat d_k$) inferred from the residuals between measured states and the expected, nominal prediction. Such information need not be re-learned through a separate RL process, so we compute and incorporate this directly into the learning process. Its magnitude and direction help describe the context, allowing CALA to focus on residual nuances.
 
 - **Rewards.** As in the pure MPC optimization, CALA is rewarded for improving tracking performance while minimizing control effort. As described above, ($\hat d_k$) provides useful local context. Therefore, we mediate the cost of control effort relative to this local context. This allows CALA to focus on the nuance of control effort justified by difficult context.
 
-
-$$
-r_k
-=
--\left[
-\|e_k\|_Q^2
-+
-\lambda
-\frac{\|u_k\|^2}
-{\epsilon+\|\hat d_k\|^2}
-\right].
-$$
-
+```math
+r_k=-\left[\|e_k\|_Q^2+\lambda\frac{\|u_k\|^2}{\epsilon+\|\hat d_k\|^2}\right].
+```
 
 Notice the prominent role $R_0$ -- a human-designed parameter -- plays in our approach. The object of CALA is **not** to discover a universal optimal value of $R_k$. A designer may intentionally penalize control effort to encourage energy savings or smoothness, or to minimize stress on components; conversely, they may sacrifice these considerations for tracking performance. $R_0$ represents this intended, nominal compromise. Our learning agent determines when, where, and by how much to depart from this initial design when justified by the current context. 
 
