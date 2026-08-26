@@ -23,7 +23,7 @@ pipeline = {
     'rl_evaluate':      False,
     'visuals_d_reject': False,
     'visuals_control':  False,
-    'visuals_features': True 
+    'visuals_features': False 
 }
 
 # main function
