@@ -83,6 +83,8 @@ class VortexField:
         print('vortex initialized')
         os.makedirs(f'{field_folder}', exist_ok=True)
         self.plot_field_at_t(f'{field_folder}/field.png', 0)
+        #self.animate_field(animate_field_path=f"{field_folder}/field_animation.gif")
+
 
     def evolve_centers(self, t):
 

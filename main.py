@@ -13,17 +13,17 @@ from data_manager import Dataset
 import cala
 import os
 
-
 # ------------------------------------------------------------------
 # Pipeline Setup
 # ------------------------------------------------------------------ 
 pipeline = {
     'model':            False,
-    'control':          True,
-    'rl_train':         True,
-    'rl_evaluate':      True,
-    'analyze_d_reject': True,
-    'visuals':          True
+    'control':          False,
+    'rl_train':         False,
+    'rl_evaluate':      False,
+    'visuals_d_reject': False,
+    'visuals_control':  False,
+    'visuals_features': True 
 }
 
 # main function
@@ -50,6 +50,7 @@ def main(configs_base = 'configs/default'):
     # initialize disturbances
     disturbor   = disturbance_generator.Disturbance(configs_base = configs_base, field = None)
     d           = disturbor.evolve(field = None, x = x, t = t)
+
 
     # initial dataset
     with open(f'{configs_base}/config_data.json') as f:
@@ -221,7 +222,7 @@ def main(configs_base = 'configs/default'):
         # evaluation configuration
         # --------------------------------------------------
 
-        cala_eval_Tf    = 200.0
+        cala_eval_Tf    = 38.0
         t_eval          = t
 
         #eval_data = Dataset(filepath="data/cala/evaluation.h5",overwrite=True)
@@ -355,22 +356,28 @@ def main(configs_base = 'configs/default'):
         benchmark_R_data = eval_data.read("benchmark_R")
 
         # compare
+        with open(f'{configs_base}/config_visualization.json') as f:
+            cfg_viz = json.load(f)
+        evaluation_folder       = cfg_viz['evaluation_folder']
+        os.makedirs(evaluation_folder, exist_ok=True)
         rl_compare_steps = [learned_R_data['step'], benchmark_R_data['step']]
         rl_compare_states = [learned_R_data['state'], benchmark_R_data['state']]
         rl_compare_targets = [learned_R_data['target'], benchmark_R_data['target']]
         plot.plot_trajectory_compare(rl_compare_steps, 
                                      rl_compare_states, 
                                      rl_compare_targets, 
-                                     filename='visualization/cala/evaluation/trajectory_compare.png', 
+                                     filename=f'{evaluation_folder}/trajectory_compare.png', 
                                      target_tolerance = 0.1, 
                                      custom_label = ['target', 'MPC-DR-CALA', 'MPC-DR'])
 
+        plot.plot_R_evaluation(learned_R_data, benchmark_R_data, filename=f"{evaluation_folder}/R_evaluation.png")
+        plot.plot_R_evaluation_cum(learned_R_data, benchmark_R_data, R0=None, filename = f"{evaluation_folder}/R_evaluation_cum.png")
 
 
     # ------------------------------------------------------------------
     # Analyze Disturbance Rejection (demo: data collected earlier)
     # ------------------------------------------------------------------
-    if pipeline['analyze_d_reject']:
+    if pipeline['visuals_d_reject']:
 
         # make a dir
         os.makedirs('visualization/analyze_d_reject', exist_ok=True)
@@ -392,9 +399,9 @@ def main(configs_base = 'configs/default'):
         plot.plot_trajectory_compare(compare_steps, compare_states, compare_targets, filename='visualization/analyze_d_reject/trajectory_compare.png', target_tolerance = 0.1)
 
     # ------------------------------------------------------------------
-    # Visualizations
+    # Visualizations of Control
     # ------------------------------------------------------------------
-    if pipeline['visuals']:
+    if pipeline['visuals_control']:
 
         # pull visualization configs 
         with open(f'{configs_base}/config_visualization.json') as f:
@@ -446,13 +453,13 @@ def main(configs_base = 'configs/default'):
             if pipeline['rl_train']:
                 cala_horizon_manager.plot_learning(folder=training_folder)
                 cala_horizon_manager.cala.plot_correction(t=0.0, resolution=200, folder = training_folder)
-            if pipeline['rl_evaluate']:
-                eval_data           = Dataset(filepath=cfg_dat["rl_evaluation_path"], overwrite=False)
-                learned_R_data      = eval_data.read("rl_learned_R")
-                benchmark_R_data    = eval_data.read("benchmark_R")
-                plot.plot_R_evaluation(learned_R_data, benchmark_R_data, filename=f"{evaluation_folder}/R_evaluation.png")
-                plot.plot_R_evaluation_cum(learned_R_data, benchmark_R_data, R0=None, filename = f"{evaluation_folder}/R_evaluation_cum.png")
-                #plot.plot_R_evaluation_pareto(learned_R_data,benchmark_R_data,R0=None,filename=os.path.join(evaluation_folder, "R_evaluation_pareto.png"))
+            #if pipeline['rl_evaluate']:
+            #    eval_data           = Dataset(filepath=cfg_dat["rl_evaluation_path"], overwrite=False)
+            #    learned_R_data      = eval_data.read("rl_learned_R")
+            #    benchmark_R_data    = eval_data.read("benchmark_R")
+            #    plot.plot_R_evaluation(learned_R_data, benchmark_R_data, filename=f"{evaluation_folder}/R_evaluation.png")
+            #    plot.plot_R_evaluation_cum(learned_R_data, benchmark_R_data, R0=None, filename = f"{evaluation_folder}/R_evaluation_cum.png")
+            #    #plot.plot_R_evaluation_pareto(learned_R_data,benchmark_R_data,R0=None,filename=os.path.join(evaluation_folder, "R_evaluation_pareto.png"))
             
         if do_animate:
             print('Producing animation...')
@@ -463,6 +470,47 @@ def main(configs_base = 'configs/default'):
             plot.animate_trajectory(time_history, full_state_history, predicted_sequences, x_target = target_history, field = field_in, filename=animate_path)
             # old (keep for now)
             #plot.animate_trajectory(full_state_history, predicted_sequences, solve_discrete_are(controller.A, controller.B, controller.Q, controller.R),filename=animate_path)
+
+    if pipeline['visuals_features']:
+
+        import umapper
+
+        # --------------------------------------------------
+        # feature-space / disturbance UMAP visualization
+        # --------------------------------------------------
+
+        feature_umap = umapper.FeatureFieldUMAP(
+            configs_base=configs_base
+        )
+
+        feature_umap.run(
+
+            # physical search domain
+            x_lims=(-5.0, 5.0),
+            y_lims=(-5.0, 5.0),
+
+            # user-defined temporal search domain
+            t_lims=(0.0, 63.0),
+
+            # samples
+            x_n=35,
+            y_n=35,
+            t_n=24,
+
+            # UMAP
+            n_neighbors=100,
+            min_dist=0.35,
+            spread=1.0,
+            random_state=42,
+
+            # smooth contour resolution
+            grid_n=220,
+            interpolation_neighbors=50,
+
+            # output
+            folder="visualization/features"
+        )
+
 
 if __name__ == "__main__":
 

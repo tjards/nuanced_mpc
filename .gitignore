@@ -3,7 +3,7 @@ visualization/animations/*
 visualization/plots/*
 visualization/cala/*
 logs/*
-docs/ignore_me/*
+
 
 # Python cache files
 __pycache__/
