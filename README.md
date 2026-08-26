@@ -28,9 +28,10 @@ Rather than selecting parameters or control actions, we condition the controller
 Detailed formulations will be described in a forthcoming paper, but we summarize the main parts here:
 
 - **Features**. The operating context ($\Phi$) is represented as a nonlinear feature vector ($\phi_k$), which depends on system state ($x_k$), time ($t_k$), and locally observed disturbances ($\hat d_k$) at sample $k$:
-$$
+
+```math
 \phi_k=\Phi(x_k,t_k,\hat d_k,\ldots),
-$$
+```
 
 
 - **Actions**. Operating context is encoded through feature activations processed by a Continuous Action Learning Automaton (CALA). Learned parameters ($\Theta$) modify the nominal relative weights of the control effort ($R_0$) portion of an MPC optimization through a learned mapping ($\rho$):
