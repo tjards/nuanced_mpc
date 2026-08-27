@@ -113,6 +113,18 @@ Note that these improvements were made by making small, local refinements online
 
 ## References
 
+If you would like to reference this work, please use this BibLaTex citation: 
+
+```
+@online{jardine2026contextmpc,
+  author  = {Jardine, P. T.},
+  title   = {Nuanced Model Predictive Control (nMPC) Source Code},
+  year    = {2026},
+  url     = {https://github.com/tjards/nuanced_mpc},
+  urldate = {2026-08-26}
+}
+```
+
 [1] P. T. Jardine, M. Kogan, S. N. Givigi, and S. Yousefi, ["Adaptive predictive control of a differential drive robot tuned with reinforcement learning,"](https://doi.org/10.1002/acs.2882) *International Journal of Adaptive Control and Signal Processing*, vol. 33, no. 2, pp. 410–423, 2019.
 
 [2] E. Stefanini, L. Palmieri, A. Rudenko, T. Hielscher, T. Linder, and L. Pallottino, ["Efficient Context-Aware Model Predictive Control for Human-Aware Navigation,"](https://doi.org/10.1109/LRA.2024.3461552) *IEEE Robotics and Automation Letters*, vol. 9, no. 11, pp. 9494–9501, 2024.
