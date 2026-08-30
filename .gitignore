@@ -3,6 +3,8 @@ visualization/animations/*
 visualization/plots/*
 visualization/cala/*
 logs/*
+analysis_script.py
+trials.py
 
 
 # Python cache files

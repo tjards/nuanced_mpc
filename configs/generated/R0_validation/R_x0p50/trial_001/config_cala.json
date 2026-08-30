@@ -1,0 +1,52 @@
+{
+    "feature_map": {
+        "x_lims": [
+            -5,
+            5
+        ],
+        "y_lims": [
+            -5,
+            5
+        ],
+        "x_n": 4,
+        "y_n": 4,
+        "sigma_factor": 0.7,
+        "feature_centers": null,
+        "include_bias": true,
+        "include_time": true,
+        "omega": 0.2,
+        "normalize": true,
+        "normalize_type": "local",
+        "group_weights": {
+            "bias": 0.15,
+            "radial": 0.7,
+            "time": 0.15
+        }
+    },
+    "cala_mpc_nld": {
+        "d_max": 7.0,
+        "mu_init": 0.5,
+        "mu_init_noise": 0.01,
+        "sigma_init": 0.3,
+        "sigma_min": 0.03,
+        "sigma_max": 0.35,
+        "learning_rate": 0.3,
+        "variance_rate": 0.15,
+        "reward_rate": 0.05,
+        "advantage_gain": 0.5,
+        "seed": 101
+    },
+    "horizon_manager": {
+        "discount": 0.95,
+        "enable": true,
+        "reward_mode": "for_r",
+        "compensation_weight": 0.01,
+        "reward_period": 3,
+        "r_lambda_effort": 0.005,
+        "r_disturbance_gain": 0.1,
+        "r_progress_floor": 0.01
+    },
+    "evaluation": {
+        "Tf": 100
+    }
+}

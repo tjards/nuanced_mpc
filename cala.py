@@ -34,8 +34,8 @@ def post_controller(horizon_manager, predicted_reference, x, xr):
 
     #predicted_reference = controller.result_state_sequence.reshape(controller.h, controller.nx).copy()
     reward, prediction_error, terminal_error, advantage = horizon_manager.update(predicted_reference, x - xr)
-    if reward is not None:
-        print(f"CALA reward: {reward:.4f}, advantage: {advantage:.4f}")
+    #if reward is not None:
+    #    print(f"CALA reward: {reward:.4f}, advantage: {advantage:.4f}")
 
 
 # ---------------------------------

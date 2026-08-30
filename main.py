@@ -23,7 +23,7 @@ pipeline = {
     'rl_evaluate':      False,
     'visuals_d_reject': False,
     'visuals_control':  False,
-    'visuals_features': False 
+    'visuals_features': False
 }
 
 # main function
@@ -222,7 +222,7 @@ def main(configs_base = 'configs/default'):
         # evaluation configuration
         # --------------------------------------------------
 
-        cala_eval_Tf    = 38.0
+        cala_eval_Tf    = 70.0
         t_eval          = t
 
         #eval_data = Dataset(filepath="data/cala/evaluation.h5",overwrite=True)
@@ -512,7 +512,23 @@ def main(configs_base = 'configs/default'):
         )
 
 
+
+# if __name__ == "__main__":
+
+#     main(configs_base = 'configs/default')
+
 if __name__ == "__main__":
 
-    main(configs_base = 'configs/R-learning-001')
+    from trials import RTrials
 
+    trials = RTrials(
+        config_file="configs/trials/config_R_trials.json"
+    )
+
+    trials.run(
+        main_function=main,
+        pipeline=pipeline
+    )
+
+    trials.plot_R_validation()
+    trials.plot_pareto()

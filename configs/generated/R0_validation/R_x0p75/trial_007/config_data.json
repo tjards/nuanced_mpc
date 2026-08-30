@@ -1,0 +1,8 @@
+{
+    "collect": true,
+    "filepath": "data/trials/R0_validation/R_x0p75/trial_007/controller.h5",
+    "rl_training_path": "data/trials/R0_validation/R_x0p75/trial_007/training.h5",
+    "rl_evaluation_path": "data/trials/R0_validation/R_x0p75/trial_007/evaluation.h5",
+    "overwrite": true,
+    "defaults": "data/dataset_defaults2.h5"
+}

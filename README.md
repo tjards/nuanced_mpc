@@ -104,8 +104,31 @@ Note that CALA found itself more confident in some features than others, reflect
 
 Note that these improvements were made by making small, local refinements online based on a **nuanced** understanding of the context derived from past experience.
 
-## Future work
 
+### Sweep analysis
+
+We implemented learning across a diverse range of initial conditions and configurations. Performance was evaluated using Root Mean Squared Error (RMSE) across 10 independent 70-s trials for each of nine nominal $R_0$ values, comparing nominal MPC (i.e., static parameters) against the learned Nuanced MPC controller. The distribution of learned $R_k/R_0$ values over the evaluation set indicates a general shift toward more aggressive control in response to disturbances, while the broader training set distribution is shown for comparison. 
+
+Here we see a clear improvement in RMSE when Nuanced MPC is used in terms of both mean and variance of RMSE. 
+
+<p align="center">
+  <img src="docs/trials/R0_validation_distribution.png" alt="Trade-off" width="41%">
+  <img src="docs/trials/R_ratio_distribution_both.png" alt="Trade-off" width="44%">
+</p>
+
+
+However, this improvement must be considered within the context of the tracking and control-effort trade off. We want our approach to judicially adjust for the local context, not simply find a more aggressive control policy. The second plot compares this trade off. Here we see significant improvements in RMSE (between 20%-30%, depending on the configuration) come with modest tradeoffs in control effort (less than 10%). 
+
+Unfortunately, in most cases, we see that a statically-selected $R_0$ can deliver comparable results. We believe this can be overcome with improvements to the learning process, which remains a focus of on going work.  
+
+<p align="center">
+  <img src="docs/trials/R0_pareto.png" alt="Trade-off" width="80%">
+</p>
+
+
+
+## Future work
+- Refine learning to pass Pareto frontier 
 - Describe the control architecture in greater detail
 - Flesh out the mathematical formulations, including feature design and RL process 
 - Carry out a formal stability analysis 
