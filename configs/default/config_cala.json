@@ -13,12 +13,12 @@
         "normalize_type": "local",  
         "group_weights": {
             "bias": 0.15,
-            "radial": 0.7,
-            "time": 0.15
+            "radial": 0.6,
+            "time": 0.25
             } 
     },
     "cala_mpc_nld": {
-        "d_max": 7.0,
+        "d_max": 2.0,
         "mu_init": 0.5,
         "mu_init_noise": 0.01,
         "sigma_init": 0.30,
@@ -36,11 +36,11 @@
         "reward_mode": "for_r",
         "compensation_weight": 0.01,
         "reward_period": 3,
-        "r_lambda_effort": 0.005, 
+        "r_lambda_effort": 0.015, 
         "r_disturbance_gain": 0.1,
         "r_progress_floor": 0.01
     },
     "evaluation":{
-        "Tf": 100
+        "Tf": null
     }
 }

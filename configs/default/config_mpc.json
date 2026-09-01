@@ -1,5 +1,5 @@
 {
-    "Tf": 300,
+    "Tf": 400,
     "Ts": 0.1,
     "A": [
         [1, 0, 0.1, 0],
@@ -21,7 +21,7 @@
     "m": 5,
     "disturbance": true,
     "disturbance_enable_linear_rejection": true,
-    "rl_parameter": "R", 
+    "rl_parameter": "R",
     "constraints": {
         "type": "box",
         "x_min": [-5, -5, -5, -5],
@@ -34,7 +34,7 @@
     "optimizer": "least_squares",
     "update_parameters_rate": 20,
     "random_seed": 42,
-    "enforce_terminal": false,
+    "enforce_terminal": true,
     "horizon_feasibility_search": false,
     "use_learned_model": false,
     "replan_mode": "receding_horizon",

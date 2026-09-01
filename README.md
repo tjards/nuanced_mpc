@@ -1,6 +1,6 @@
 # Nuanced Model Predictive Control via Reinforcement Learning
 
-Summary: *This project implements Nuanced Model Predictive Control (nMPC) for a robot operating within a time-varying, nonlinear disturbance field. Rather than learning specific parameters or control actions directly, the controller makes subtle, context-dependent refinements to how it balances competing objectives. These refinements are based on experience accumulated through Reinforcement Learning (RL) and expressed through variations on relative weights in the objective function. We describe this process as adding nuance to the controller’s nominal tradeoff between tracking performance and control effort. In essence, the controller learns: “under this operating context, favor a slightly different compromise than originally designed.”.*
+Summary: *This project implements Nuanced Model Predictive Control (nMPC) for a robot operating within a time-varying, nonlinear disturbance field. Rather than learning specific parameters or control actions directly, the controller makes subtle, context-dependent refinements to how it balances competing objectives. These refinements are based on experience accumulated through Reinforcement Learning (RL) and expressed through variations on relative weights in the objective function. We describe this process as adding nuance to the controller’s nominal tradeoff between tracking performance and control effort. In essence, the controller learns: “under this operating context, favor a slightly different compromise than originally designed.” Initial results suggest our approach extends the Pareto frontier of the performance/effort into regions not achievable using conventional static MPC tuning.*
 
 ### Motivation
 
@@ -105,30 +105,40 @@ Note that CALA found itself more confident in some features than others, reflect
 Note that these improvements were made by making small, local refinements online based on a **nuanced** understanding of the context derived from past experience.
 
 
-### Sweep analysis
+### Pareto Analysis
 
-We implemented learning across a diverse range of initial conditions and configurations. Performance was evaluated using Root Mean Squared Error (RMSE) across 10 independent 70-s trials for each of nine nominal $R_0$ values, comparing nominal MPC (i.e., static parameters) against the learned Nuanced MPC controller. The distribution of learned $R_k/R_0$ values over the evaluation set indicates a general shift toward more aggressive control in response to disturbances, while the broader training set distribution is shown for comparison. 
-
-Here we see a clear improvement in RMSE when Nuanced MPC is used in terms of both mean and variance of RMSE. 
+We implemented learning across a diverse range of initial conditions and configurations. Performance was evaluated using Root Mean Squared Error (RMSE) across 10 independent $70-s$ trials for each of nine nominal $R_0$ values, comparing nominal MPC (i.e., static parameters) against the learned Nuanced MPC controller. Here we see a clear improvement in RMSE when Nuanced MPC is used in terms of both mean and variance of RMSE. However, this improvement must be considered within the context of the tracking and control-effort trade off. We want our approach to judicially adjust for the local context, not simply find a more aggressive control policy. 
 
 <p align="center">
   <img src="docs/trials/R0_validation_distribution.png" alt="Trade-off" width="41%">
-  <img src="docs/trials/R_ratio_distribution_both.png" alt="Trade-off" width="44%">
 </p>
 
-
-However, this improvement must be considered within the context of the tracking and control-effort trade off. We want our approach to judicially adjust for the local context, not simply find a more aggressive control policy. The second plot compares this trade off. Here we see significant improvements in RMSE (between 20%-30%, depending on the configuration) come with modest tradeoffs in control effort (less than 10%). 
-
-Unfortunately, in most cases, we see that a statically-selected $R_0$ can deliver comparable results. We believe this can be overcome with improvements to the learning process, which remains a focus of on going work.  
+At left, we see the distribution of the contextual weighting ratio ($R_k/R_0$) for our initial experiment. Notice both the training and evaluation are heavily biased towards more aggressive control effort. This suggests our controller has merely learned that greater control effort (i.e., lower values of $R_k$ relative to $R_0$) reduces RMSE. The evaluation distribution also suggests this aggression overpowers the controller's ability to make nuanced adjustments. Therefore, we reduced the search space to generally lower values of $R_k$ and increased the relative weight of control effort in the reward. At right, we see a more encouraging distribution, where control effort is spread more evenly (presumably, adapting to context in the environment).
 
 <p align="center">
-  <img src="docs/trials/R0_pareto.png" alt="Trade-off" width="80%">
+  <img src="docs/trials/R_ratio_distribution_both.png" alt="Trade-off" width="45%">
+  <img src="docs/trials/R_ratio_distribution_both_raw.png" alt="Trade-off" width="45%">
 </p>
 
+
+We ran the learning for a span of $R_0$ values from $0.03$ to $0.3$ and plotted the RMSE across another 10 independent $70-s$ evaluation trials. The plot below presents the results with respect to the trade-off in position tracking and control effort (i.e., the Pareto frontier). Here we infer a few encouraging things:
+
+1. Nuanced MPC generally improves tracking performance by shifting the controllers toward more aggressive control inputs.
+
+2. This shift occurs roughly along the Static MPC Pareto frontier, indicating that the tracking improvements are obtained through trade-offs similar to those available through conventional fixed MPC tuning. 
+
+3. Unlike Static MPC, Nuanced MPC realizes these operating points dynamically online as context-dependent adjustments.
+
+4. The benefit becomes more apparent at larger values of $R_0$ (i.e., where the designer places greater emphasis on limiting control effort). In this region, Nuanced MPC can recover performance while retaining much of the intended reduction in control effort.
+
+5. At the low-effort end of the trade-off, Nuanced MPC reaches operating points not attained by Static MPC configurations, suggesting that contextual adaptation may extend the empirical Pareto frontier and permit improved tracking–effort trade-offs beyond those achievable through fixed-$R$ tuning.
+
+<p align="center">
+  <img src="docs/trials/combined_pareto_frontiers_raw.png" alt="Trade-off" width="60%">
+</p>
 
 
 ## Future work
-- Refine learning to pass Pareto frontier 
 - Describe the control architecture in greater detail
 - Flesh out the mathematical formulations, including feature design and RL process 
 - Carry out a formal stability analysis 

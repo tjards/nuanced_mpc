@@ -1,5 +1,5 @@
 {
-    "Tf": 300,
+    "Tf": 400,
     "Ts": 0.1,
     "A": [
         [
@@ -93,7 +93,7 @@
     "optimizer": "least_squares",
     "update_parameters_rate": 20,
     "random_seed": 107,
-    "enforce_terminal": false,
+    "enforce_terminal": true,
     "horizon_feasibility_search": false,
     "use_learned_model": false,
     "replan_mode": "receding_horizon",

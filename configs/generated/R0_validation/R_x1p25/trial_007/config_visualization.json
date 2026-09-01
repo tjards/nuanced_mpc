@@ -1,0 +1,15 @@
+{
+    "animate_path": "data/trials/R0_validation/R_x1p25/trial_007/plots/trajectory.gif",
+    "plot_inputs_path": "data/trials/R0_validation/R_x1p25/trial_007/plots/control/inputs.png",
+    "plot_velocities_path": "data/trials/R0_validation/R_x1p25/trial_007/plots/control/velocities.png",
+    "field_folder": "visualization/field",
+    "plot_trajectory_path": "data/trials/R0_validation/R_x1p25/trial_007/plots/control/trajectory.png",
+    "animate_field": "visualization/animations/field.gif",
+    "control_folder": "data/trials/R0_validation/R_x1p25/trial_007/plots/control",
+    "training_folder": "data/trials/R0_validation/R_x1p25/trial_007/plots/training",
+    "evaluation_folder": "data/trials/R0_validation/R_x1p25/trial_007/plots/evaluation",
+    "keep_modelling_history": false,
+    "show_field": false,
+    "do_plots": false,
+    "do_animate": false
+}

@@ -883,13 +883,13 @@ class HorizonManager():
             command_effort_step = np.sum(u_trial**2, axis=1)
 
             # ----------------------------------------------------------
-            # 4. Estimated disturbance energy
+            # 4. Estimated disturbance energy: big = permits more control
             # ----------------------------------------------------------
 
             disturbance_energy_step = np.sum(d_hat_trial**2, axis=1)
 
             # ----------------------------------------------------------
-            # 5. Disturbance-normalized effort: big = encourages more control
+            # 5. Disturbance-normalized effort
             # ----------------------------------------------------------
 
             net_effort_step = (command_effort_step/(1.0+ self.r_disturbance_gain * disturbance_energy_step))
