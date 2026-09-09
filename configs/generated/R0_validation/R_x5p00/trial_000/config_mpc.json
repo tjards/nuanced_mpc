@@ -97,5 +97,5 @@
     "horizon_feasibility_search": false,
     "use_learned_model": false,
     "replan_mode": "receding_horizon",
-    "model_noise": 0.05
+    "model_noise": 0.001
 }

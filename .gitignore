@@ -5,6 +5,7 @@ visualization/cala/*
 logs/*
 analysis_script.py
 trials.py
+validation.py
 
 
 # Python cache files

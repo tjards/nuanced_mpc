@@ -31,8 +31,8 @@ class Plant:
             x_next = self.A @ x.flatten() + self.B @ (u.flatten() + self.d.flatten())
             
         # soften the constraint
-        #softener = 1
-        #x_next[2] = np.clip(x_next[2], softener*constraints['x_min'][2], softener*constraints['x_max'][2])
-        #x_next[3] = np.clip(x_next[3], softener*constraints['x_min'][3], softener*constraints['x_max'][3])
+        softener = 1
+        x_next[2] = np.clip(x_next[2], softener*self.constraints['x_min'][2], softener*self.constraints['x_max'][2])
+        x_next[3] = np.clip(x_next[3], softener*self.constraints['x_min'][3], softener*self.constraints['x_max'][3])
 
         return x_next

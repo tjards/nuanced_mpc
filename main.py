@@ -16,6 +16,8 @@ import os
 # ------------------------------------------------------------------
 # Pipeline Setup
 # ------------------------------------------------------------------ 
+mode = 'validate'  # 'trial' or 'pipeline' or 'validate'
+
 pipeline = {
     'model':            False,
     'control':          False,
@@ -512,23 +514,30 @@ def main(configs_base = 'configs/default'):
         )
 
 
-
-# if __name__ == "__main__":
-
-#     main(configs_base = 'configs/default')
-
 if __name__ == "__main__":
 
-    from trials import RTrials
+    if mode == 'pipeline':
 
-    trials = RTrials(
-        config_file="configs/trials/config_R_trials.json"
-    )
+        print("Running manual pipeline...")
+        main(configs_base = 'configs/default')
 
-    trials.run(
-        main_function=main,
-        pipeline=pipeline
-    )
+    elif mode == 'trial':
 
-    trials.plot_R_validation()
-    trials.plot_pareto()
+        print("Running R-trials...")
+        from trials import RTrials
+        trials = RTrials(config_file="configs/trials/config_R_trials.json")
+        trials.run(main_function=main, pipeline=pipeline)
+        trials.plot_R_validation()
+        trials.plot_pareto()
+
+    elif mode == 'validate':
+
+        print("Validating results...")
+        import validation
+        validation.run("configs/trials/config_R_trials.json")
+
+
+
+    else:
+        
+        raise ValueError(f"Invalid mode: {mode}. Choose 'trial' or 'pipeline'.")
