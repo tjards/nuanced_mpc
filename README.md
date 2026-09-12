@@ -1,6 +1,6 @@
 # Nuanced Model Predictive Control via Reinforcement Learning
 
-Summary: *This project implements Nuanced Model Predictive Control (nMPC) for a robot operating within a time-varying, nonlinear disturbance field. Rather than learning specific parameters or control actions directly, the controller makes subtle, context-dependent refinements to how it balances competing objectives. These refinements are based on experience accumulated through Reinforcement Learning (RL) and expressed through variations on relative weights in the objective function. We describe this process as adding nuance to the controller’s nominal tradeoff between tracking performance and control effort. In essence, the controller learns: “under this operating context, favor a slightly different compromise than originally designed.” Initial results suggest our approach extends the Pareto frontier of the performance/effort into regions not achievable using conventional static MPC tuning.*
+*This project explores Nuanced Model Predictive Control (nMPC): a lightweight reinforcement-learning layer wrapped around conventional MPC to adapt to changes in the environment. Rather than replacing the controller or choosing actions directly, a Continuous Action Learning Automaton (CALA) adjusts MPC’s nominal control-effort penalty as the operating context changes. Classical disturbance estimation and rejection handle the obvious parts, leaving CALA to focus on modest, interpretable refinements from spatial and temporal features. The result is a controller that keeps the model, constraints, and designer-specified baseline trade-off intact, while adapting that trade-off when conditions call for it. Early experiments are encouraging. Full formulation, analysis, and results to be developed in a forthcoming paper.*
 
 ### Motivation
 
@@ -54,7 +54,7 @@ Notice the prominent role $R_0$ -- a human-designed parameter -- plays in our ap
 
 Below are initial results, which will be presented in greater detail in a future paper.
 
-### Field Generation
+## Field Generation
 
 In `nonlinear_field.py`, we produce a time-varying disturbance field, as illustrated below:
 
@@ -62,9 +62,9 @@ In `nonlinear_field.py`, we produce a time-varying disturbance field, as illustr
   <img src="docs/features/field_animation.gif" alt="Modeller excitation and convergence" width="60%">
 </p>
 
-### Features 
+## Features 
 
-After building the space and time features described above (in this, case 19 total), we used [Uniform Manifold Approximation and Projection (UMAP)](https://umap-learn.readthedocs.io/en/latest/) to reduce the dimensionality and visualize the features in terms of direction and magnitude of the disturbances:
+After building the space and time features described above (19 total in this case), we used [Uniform Manifold Approximation and Projection (UMAP)](https://umap-learn.readthedocs.io/en/latest/) to reduce the dimensionality and visualize the features in terms of direction and magnitude of the disturbances:
 
 | Direction | Magnitude |
 |:---:|:---:|
@@ -78,7 +78,7 @@ UMAP preserves local neighbourhoods well, and these plots give us useful informa
 - Learning results should be generalizable across previously unexplored contexts. 
 - There are some hard transition regions. 
 
-### Disturbance Rejection
+## Disturbance Rejection
 
 As mentioned above, we leverage well-established techniques for locally-inferred disturbance rejection using model residuals. Below illustrates this works pretty well. In orange, we see MPC struggling to track the target without any disturbance rejection. In blue, we see locally-inferred disturbance rejection works pretty well. A more detailed investigation of this can be found in a supplemental README [here](docs/README-DISTURBANCE.md). 
 
@@ -86,9 +86,14 @@ As mentioned above, we leverage well-established techniques for locally-inferred
   <img src="docs/disturbance/trajectory_compare.png" alt="Modeller excitation and convergence" width="60%">
 </p>
 
-What is useful here is that this classical disturbance rejection already provides a lot of the heavy lifting for us. This leaves room for CALA to focus on nuances not captured by model residuals. 
+Looking closer, when we compare the true disturbances to the estimated, we see there remains residual, uncaptured dynamics. What is useful here is that this classical disturbance rejection already provides a lot of the heavy lifting for us. This leaves room for CALA to focus on the nuances in these residuals. 
 
-### Learning Results
+<p align="center">
+  <img src="docs/evaluation/03_disturbance_estimator_magnitude.png" alt="" width="80%">
+</p>
+
+
+## Learning 
 
 A detailed implementation of our learning process is available in our custom `cala.py` module. As CALA explored the search space, confidence was expressed by a reduction in sigma-variance. Below we seen an example of this variance reducing during a representative trial. 
 
@@ -96,14 +101,62 @@ A detailed implementation of our learning process is available in our custom `ca
 |:---:|:---:|
 | <img src="docs/cala/cala_exploration_level.png" alt="" width="90%"> | <img src="docs/cala/all_sigmas.png" alt="" width="90%"> |
 
-Note that CALA found itself more confident in some features than others, reflecting its incomplete experience. Despite this partial information, it was able to develop enough understanding of the environment to generalize and make refinements to the controller (i.e., $R_k$ described above) online. Below we see that these nuanced refinements improved the tracking performance substantially (nearly 30%) while also reducing control effort (by approximately 1%). 
+Note that CALA found itself more confident in some features than others, reflecting its incomplete experience. Below shows the relative contributions of the feature groups (bias, radial, and time) across the residual disturbances described earlier.  
+
 
 <p align="center">
-  <img src="docs/cala/R_evaluation_cum.png" alt="Modeller excitation and convergence" width="80%">
+  <img src="docs/evaluation/05_policy_feature_group_share.png" alt="" width="80%">
 </p>
 
-Note that these improvements were made by making small, local refinements online based on a **nuanced** understanding of the context derived from past experience.
 
+## Evaluation 
+
+We evaluated the learning performance using a number of benchmarks. 
+
+### It improves performance 
+
+Here we provide a high-level comparison of the learned controller compared to the benchmark $diag(R_o) = [0.05, 0.05]$. CALA able to develop enough understanding of the environment to generalize and make refinements to the controller (i.e., $R_k$ described above) online. Small, local refinements online based on this **nuanced** understanding of the context improved both tracking performance  while also reducing control effort.
+
+<p align="center">
+  <img src="docs/cala/R_evaluation_cum.png" alt="" width="80%">
+</p>
+
+### It doesn't cost more
+
+We repeated this evaluation across a range of $R_0$ diagonal values from $0.01$ to $0.30$. The gains in tracking performance normalized for control effort are provided below. A plot of the combined pareto frontier is also provided, suggesting CALA optimizes along this underlying trade-off between control and performance.
+
+<p align="center">
+  <img src="docs/evaluation/normalized_tracking_efficiency_raw.png" alt="" width="41%">
+  <img src="docs/evaluation/combined_pareto_frontiers_raw.png" alt="" width="35%">
+</p>
+
+### It is not just another estimator
+
+A useful check is whether CALA has merely learned a direct mapping from estimator error. As shown below, a pointwise comparison of the Spearman correlations are small (between -0.01 and 0.18), suggesting large estimator residuals do not map monotonically to large departures of $R_0$ from nominal.
+
+<p align="center">
+  <img src="docs/evaluation/11_residual_vs_R_scatter.png" alt="" width="80%">
+</p>
+
+This is consistent our desired role of CALA: it is learning a performance-conditioned control policy, not another disturbance estimator.
+
+### It is actually learning context
+
+As the goal is to learn nuanced context, we want to confirm CALA is not simply learning a better fixed value of $R$. To isolate these effects, the contextual controller is compared with:
+
+- Nominal static: the original designer-selected $R_0$
+- Constant learned: the mean $\bar{R}_k$ learned by CALA
+- Contextual learned: the full $R_k=R_0\rho(\phi_k)$ policy
+
+
+<p align="center">
+  <img src="docs/evaluation/validation_relative_to_nominal.png" alt="" width="80%">
+</p>
+
+The constant learned $\bar{R}_k$ accounts for most of the total tracking improvement. However, the contextual learned $R_k$ remains consistently below. The gap between these two learned curves represents the incremental closed-loop value of context. The effects are small, systematic across the $R_0$ sweep. This demonstrates that the observed benefit is not explained solely by global retuning.
+
+
+<!--
 
 ### Pareto Analysis
 
@@ -143,6 +196,8 @@ We ran the learning for a span of $R_0$ values from $0.03$ to $0.3$ and plotted 
 - Flesh out the mathematical formulations, including feature design and RL process 
 - Carry out a formal stability analysis 
 - Demonstrate performance across broader range of contexts
+
+-->
 
 ## References
 

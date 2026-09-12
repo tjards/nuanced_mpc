@@ -6,7 +6,7 @@ logs/*
 analysis_script.py
 trials.py
 validation.py
-
+configs/generated/*
 
 # Python cache files
 __pycache__/
